@@ -63,8 +63,13 @@ with export and import to a JSON file.
 
 **Sound, all of it synthesised.** No audio files: a wind bed that gusts on a
 slow wander, water that rises and falls with how much of it is on screen, bells
-that ring only in quiet, and blades that cut the air. The bed steps back when a
-melee starts and returns when it ends.
+that ring only in quiet, blades that cut the air, an axe into a trunk, a pick
+ringing off a seam. The bed steps back when a melee starts and returns when it
+ends, and separate sliders in the menu set effects and ambience.
+
+**Blows land somewhere.** A hit on a building throws chips of that building's
+own colour back along the line of the strike, blooms dust, and leaves a scar
+that fades. A ram or a mangonel throws twice as much and shakes the view.
 
 **Fog of war**, a live minimap, a chronicle of objectives, and a statistics
 ledger with charts.
@@ -88,6 +93,7 @@ npm test
 | `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger |
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
 | `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
+| `effects.test.js` | The volume sliders, the gathering rhythm and its debris, and what a blow does to a wall — chips, dust, a fading scar, and a ram that shakes the view |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 
 Individual suites: `npm run test:water`, and so on.
@@ -113,7 +119,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the seven suites
+test/*.test.js         the eight suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block

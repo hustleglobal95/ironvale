@@ -328,6 +328,32 @@
   .slot button:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   .slot button[disabled]{opacity:.3; cursor:not-allowed}
   .slot button[disabled]:hover{border-color:var(--chrome-3); color:var(--parch-dim)}
+  .mix{display:grid; grid-template-columns:1fr; gap:3px; margin-top:12px; max-width:420px}
+  .mix label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:"Barlow Condensed",sans-serif; font-size:12px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--parch-dim); margin-top:7px;
+  }
+  .mix label i{font-style:normal; color:var(--gold); font-variant-numeric:tabular-nums; letter-spacing:.04em}
+  .mix input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:16px;
+    background:transparent; cursor:pointer; margin:0;
+  }
+  .mix input[type=range]::-webkit-slider-runnable-track{
+    height:4px; border-radius:2px; background:#0E0B07; border:1px solid var(--chrome-3);
+  }
+  .mix input[type=range]::-moz-range-track{
+    height:4px; border-radius:2px; background:#0E0B07; border:1px solid var(--chrome-3);
+  }
+  .mix input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:13px; height:13px; margin-top:-5.5px;
+    border-radius:50%; background:var(--gold); border:1px solid #1F1913;
+  }
+  .mix input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border-radius:50%; background:var(--gold); border:1px solid #1F1913;
+  }
+  .mix input[type=range]:focus-visible{outline:2px solid var(--gold); outline-offset:3px}
+  .mix input[type=range]:disabled{opacity:.35; cursor:not-allowed}
   .note{font-size:12.5px; color:var(--parch-dim); line-height:1.5; margin:10px 0 0; font-style:italic}
   #fileIn{display:none}
 
@@ -487,6 +513,12 @@
       <button class="ghost" id="mSound">Sound: on</button>
       <button class="ghost" id="mSpeed">Speed: 1&times;</button>
       <button class="ghost" id="mChron">Chronicle: shown</button>
+    </div>
+    <div class="mix">
+      <label for="fxVol"><span>Effects</span><i id="fxVolVal">85%</i></label>
+      <input type="range" id="fxVol" min="0" max="100" step="5" value="85">
+      <label for="ambVol"><span>Ambience</span><i id="ambVolVal">85%</i></label>
+      <input type="range" id="ambVol" min="0" max="100" step="5" value="85">
     </div>
     <div class="rule"></div>
     <div class="row">
@@ -879,7 +911,8 @@ const keys=Object.create(null);
 let mmDrag=false, lastGroupTap={k:null,t:0}, lastPick={id:0,t:0}, lastKingCry=-99, lastBreakCry=-99, lastStallCry=-99;
 let aiming=false, patrolling=false, marks=[], lineDrag=null, hover=null;
 let puffs=[], sparks=[], fallen=[], spent=[], vignette=null, swell=null;
-let battleHeat=0, visWater=0;
+let battleHeat=0, visWater=0, shake=0;
+let scarred=[];        // only the buildings currently carrying marks
 function onScreen(x,y,pad){
   pad=pad||0;
   return x>cam.x-pad && y>cam.y-pad && x<cam.x+innerWidth+pad && y<cam.y+innerHeight+pad;
@@ -911,6 +944,61 @@ function tradeMul(u,res){
 }
 // Every villager trade still counts as a villager everywhere in the game; only
 // the gathering rate and the tool in hand differ.
+// Each trade has its own rhythm and its own debris.
+const WORK_BEAT={
+  tree:  {period:0.62, snd:'chop',   col:[196,158,96],  n:4, up:52},
+  gold:  {period:0.74, snd:'pick',   col:[214,182,112], n:3, up:44},
+  berry: {period:0.50, snd:'forage', col:[126,150,80],  n:3, up:30},
+  fish:  {period:0.80, snd:'forage', col:[168,206,214], n:2, up:22},
+  other: {period:0.58, snd:'forage', col:[168,150,104], n:3, up:34}
+};
+// Where a blow lands on a wall: chips of the wall's own colour thrown back
+// along the line of the strike, a bloom of dust, and a scar that stays.
+const DUST=[196,186,158];
+function bldImpact(src,b,heavy){
+  const a=Math.atan2(b.y-src.y, b.x-src.x);
+  // the point on the building's edge facing the attacker, not its centre
+  const ix=b.x-Math.cos(a)*Math.min(b.w,b.h)*TILE*0.42;
+  const iy=b.y-Math.sin(a)*Math.min(b.w,b.h)*TILE*0.42;
+  const wall=BLD[b.type].wall||'#B9A87F';
+  const rgb=[parseInt(wall.slice(1,3),16),parseInt(wall.slice(3,5),16),parseInt(wall.slice(5,7),16)];
+  const n=heavy?9:5;
+  for(let i=0;i<n&&sparks.length<170;i++){
+    const sp=(heavy?140:80)*(0.5+rnd());
+    const th=a+Math.PI+(rnd()-0.5)*1.5;
+    sparks.push({x:ix+(rnd()-0.5)*10, y:iy+(rnd()-0.5)*10,
+      vx:Math.cos(th)*sp, vy:Math.sin(th)*sp-40-rnd()*50,
+      t:0.3+rnd()*0.3, h:rnd(),
+      c:[rgb[0]*(0.7+rnd()*0.4)|0, rgb[1]*(0.7+rnd()*0.4)|0, rgb[2]*(0.7+rnd()*0.4)|0]});
+  }
+  for(let i=0;i<(heavy?4:2)&&puffs.length<240;i++)
+    puffs.push({x:ix+(rnd()-0.5)*16, y:iy+(rnd()-0.5)*12, t:heavy?0.85:0.55,
+      r:(heavy?5:3)+rnd()*4, dust:true});
+  // Scars live on the building they belong to. A global list means every
+  // building pays for every other building's damage on every frame.
+  if(!b.scars){ b.scars=[]; if(scarred.indexOf(b)<0) scarred.push(b); }
+  if(b.scars.length<14)
+    b.scars.push({dx:ix-b.x, dy:iy-b.y, r:(heavy?5:3)+rnd()*2.5, t:heavy?5:3.2, life:heavy?5:3.2});
+  if(heavy) shake=Math.min(6, shake+2.4);
+}
+
+function workStrike(u,res,W){
+  if(!onScreen(res.x,res.y,80)) return;
+  sfx(W.snd);
+  if(sparks.length>150) return;
+  for(let i=0;i<W.n;i++)
+    sparks.push({x:res.x+(rnd()-0.5)*12, y:res.y-2+(rnd()-0.5)*10,
+      vx:(u.x<res.x?-1:1)*(30+rnd()*70), vy:-W.up-rnd()*W.up,
+      t:0.26+rnd()*0.2, h:rnd(), c:W.col});
+}
+// A felled tree does not simply vanish: it goes over and lies there a moment.
+function treeFall(res){
+  fallen.push({x:res.x, y:res.y, tree:(res.id*2654435761)>>>0,
+               tilt:(res.id&1?1:-1)*1.42, t:2.2, life:2.2});
+  for(let i=0;i<7&&sparks.length<160;i++)
+    sparks.push({x:res.x+(rnd()-0.5)*18, y:res.y-6+(rnd()-0.5)*14,
+      vx:(rnd()-0.5)*120, vy:-60-rnd()*80, t:0.4+rnd()*0.3, h:rnd(), c:[186,150,92]});
+}
 function isVil(e){ return !!(e && e.kind==='unit' && UNIT[e.type] && UNIT[e.type].cls==='vil'); }
 function vilCount(o){ return units(o).filter(u=>isVil(u)).length; }
 function garrisonedOf(o){
@@ -1249,7 +1337,7 @@ function newGame(diff){
           camps:0, raiders:0, tradesmen:0, flagBest:0, army:0};
   objDone=Object.create(null);
   groups=Object.create(null);
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
   hist=[]; histAt=0;
   aiState={t:0, wave:0, waveSize:DIFF[difficulty].wave, attacking:false, lastAttack:0, camps:0, harass:false};
   seed=(Date.now()>>>0)^0x9E3779B9;
@@ -1730,9 +1818,15 @@ function hit(src,t){
   battleHeat=Math.min(1.6, battleHeat+0.21);
   // Only sound blows the player can see, or a battle off-screen is as loud as
   // one in front of them.
-  if(onScreen(t.x,t.y,90)){
-    if(t.kind==='bld') sfx('thud');
-    else if(uRange(src)>60) sfx('bow');
+  const seen=onScreen(t.x,t.y,110);
+  if(t.kind==='bld'){
+    const heavy=UNIT[src.type]&&UNIT[src.type].cls==='siege';
+    if(seen){
+      sfx(heavy?'crash':'thud');
+      bldImpact(src,t,heavy);
+    }
+  } else if(seen){
+    if(uRange(src)>60) sfx('bow');
     else sfx(armorOf(t)>=4 ? 'clang' : 'slash');
   }
   if(sparks.length<160){
@@ -1885,11 +1979,22 @@ function updateUnit(u,dt){
         if(rem <= GATHER_RANGE + (u.resT.kind==='bld'?u.resT.r*0.7:0)){
           const take=Math.min(GATHER_RATE*sides[u.owner].mod.gather*tradeMul(u,u.resT)*dt, carryCap(u.owner)-u.carry, u.resT.amount);
           u.resT.amount-=take; u.carry+=take; u.carryType=key;
+          // Gathering is a continuous drain, so the work needs its own beat or
+          // there is nothing to hang a swing on.
+          const W=WORK_BEAT[u.resT.type]||WORK_BEAT.other;
+          u.work=(u.work||0)+dt;
+          if(u.work>=W.period){
+            u.work=0;
+            u.swing=0.16;
+            workStrike(u,u.resT,W);
+          }
           if(u.resT.amount<=0){
-            u.resT.dead=true;
+            const felled=u.resT;
+            if(felled.type==='tree'&&onScreen(felled.x,felled.y,60)){ sfx('timber'); treeFall(felled); }
+            felled.dead=true;
             u.resT=nearestRes(u.x,u.y,key,360)||null;
           }
-        }
+        } else u.work=0;
       }
       break;
     }
@@ -2219,7 +2324,8 @@ function knows(e){
 
 /* ------------------------------ sound ------------------------------ */
 const SFX={
-  on:true, ctx:null, master:null, last:Object.create(null),
+  on:true, ctx:null, master:null, fx:null, last:Object.create(null),
+  fxVol:0.85, ambVol:0.85,
   init(){
     if(this.ctx) return;
     try{
@@ -2229,9 +2335,20 @@ const SFX={
       this.master=this.ctx.createGain();
       this.master.gain.value=0.14;
       this.master.connect(this.ctx.destination);
+      // Effects hang off their own bus so the slider has something to move that
+      // is not the ambience. Ambience gets its own inside buildAmbience.
+      this.fx=this.ctx.createGain();
+      this.fx.gain.value=this.fxVol;
+      this.fx.connect(this.master);
     }catch(e){ this.ctx=null; }
     this.buildAmbience();
   },
+
+  setFx(v){
+    this.fxVol=Math.max(0,Math.min(1,v));
+    if(this.fx) this.fx.gain.setTargetAtTime(this.fxVol, this.ctx.currentTime, 0.05);
+  },
+  setAmb(v){ this.ambVol=Math.max(0,Math.min(1,v)); },
 
   // ---- ambience -----------------------------------------------------------
   // One looping noise buffer feeds every continuous bed. Wind and water are the
@@ -2300,7 +2417,7 @@ const SFX={
     if(!this.ctx||!this.amb) return;
     const t=this.ctx.currentTime;
     const on=this.on?1:0;
-    this.amb.gain.setTargetAtTime(on*(0.85-Math.min(0.42, env.battle*0.42)), t, 0.30);
+    this.amb.gain.setTargetAtTime(on*this.ambVol*(1-Math.min(0.49, env.battle*0.49)), t, 0.30);
     if(!on) return;
 
     // Wind gusts on a slow wander rather than a sine, so it never sounds cyclic.
@@ -2355,7 +2472,7 @@ const SFX={
     g.gain.setValueAtTime(0.0001,t);
     g.gain.exponentialRampToValueAtTime(vol, t+0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t+len);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.fx||this.master);
     src.start(t); src.stop(t+len+0.02);
   },
   // Two detuned partials beating against each other: struck metal.
@@ -2368,7 +2485,7 @@ const SFX={
       g.gain.setValueAtTime(0.0001,t);
       g.gain.exponentialRampToValueAtTime(vol, t+0.006);
       g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-      o.connect(g); g.connect(this.master);
+      o.connect(g); g.connect(this.fx||this.master);
       o.start(t); o.stop(t+dur+0.02);
     }
   },
@@ -2399,6 +2516,17 @@ const SFX_DEFS={
   clang: ()=>{ SFX.slash(1900,0.09,0.46); SFX.ring(1750+Math.random()*260, 0.26, 0.15); },
   bow:   ()=>{ SFX.slash(1450,0.10,0.58); SFX.ring(320,0.07,0.10); },
   thud:  ()=>{ SFX.tone(120,70,0.12,'sine',0.34); SFX.slash(560,0.09,0.30); },
+  // An axe into a trunk: the bite, then the wood answering.
+  chop:  ()=>{ SFX.slash(1250+Math.random()*300, 0.075, 0.95);
+               SFX.tone(196+Math.random()*34, 96, 0.15, 'triangle', 0.52); },
+  // Steel into rock: brighter, and it rings.
+  pick:  ()=>{ SFX.slash(3000+Math.random()*700, 0.06, 0.66);
+               SFX.ring(2350+Math.random()*380, 0.19, 0.14); },
+  forage:()=>{ SFX.slash(1750+Math.random()*500, 0.075, 0.30); },
+  crash: ()=>{ SFX.tone(86,44,0.34,'sine',0.55); SFX.slash(430,0.24,0.55);
+               SFX.ring(150,0.30,0.10); },
+  timber:()=>{ SFX.tone(150,58,0.55,'triangle',0.34);
+               SFX.slash(700,0.42,0.30); },
   error: ()=>SFX.tone(130,110,0.12,'square',0.3)
 };
 function sfx(name){
@@ -2696,6 +2824,19 @@ function frame(now){
     fallen=fallen.filter(q=>q.t>0);
     for(const q of spent) q.t-=dt;
     spent=spent.filter(q=>q.t>0);
+    // Only buildings that actually carry scars pay anything here.
+    if(scarred.length){
+      for(let i=scarred.length-1;i>=0;i--){
+        const b=scarred[i];
+        if(b.dead||!b.scars){ scarred.splice(i,1); continue; }
+        for(let j=b.scars.length-1;j>=0;j--){
+          b.scars[j].t-=dt;
+          if(b.scars[j].t<=0) b.scars.splice(j,1);
+        }
+        if(!b.scars.length){ b.scars=null; scarred.splice(i,1); }
+      }
+    }
+    shake=Math.max(0, shake-dt*9);
     if(ents.some(e=>e.dead)){
       ents=ents.filter(e=>!e.dead); touchLists();
       sel=sel.filter(e=>!e.dead);
@@ -2853,6 +2994,10 @@ const GRAIN_DARK=[28,38,54], GRAIN_LIGHT=[255,246,212];
 // one-pixel-per-tile bitmap and scaled up with smoothing, so neighbouring
 // terrains melt into each other instead of meeting at a hard grid line; the
 // grass detail and the sand along a shore are stamped on crisply afterwards.
+// Which buildings have a hearth, and where on the ridge the stack sits.
+// Trades hang a sign; keeps, towers and camps do not.
+const SIGNED={mill:1, lumber:1, mining:1, smith:1, market:1, uni:1, range:1, stable:1, siege:1, barracks:1, dock:1};
+const CHIMNEY={tc:0.24, house:0.28, mill:0.30, smith:0.70, barracks:0.24, uni:0.74, market:0.22, castle:0.18};
 const CH_T=8, CH_PX=CH_T*28;
 const chunkCache=new Map();
 let chunkTick=0;
@@ -2952,6 +3097,13 @@ function teamLight(o){ return o===PLAYER?'#79B4EE':o===MARAUDER?'#A2946A':'#E872
 function draw(){
   const W=innerWidth,H=innerHeight;
   ctx.clearRect(0,0,W,H);
+  // A ram landing shakes the view. Nudging the camera for the duration of the
+  // frame shakes terrain, buildings and units together, and costs nothing.
+  const camX0=cam.x, camY0=cam.y;
+  if(shake>0.05){
+    cam.x+=(Math.random()-0.5)*shake;
+    cam.y+=(Math.random()-0.5)*shake;
+  }
   const x0=Math.max(0,(cam.x/TILE)|0), y0=Math.max(0,(cam.y/TILE)|0);
   const x1=Math.min(MAP_W-1,((cam.x+W)/TILE|0)+1), y1=Math.min(MAP_H-1,((cam.y+H)/TILE|0)+1);
 
@@ -3055,7 +3207,9 @@ function draw(){
 
   // dust kicked up underfoot
   for(const q of puffs){
-    ctx.fillStyle='rgba(196,186,150,'+(q.t*0.5).toFixed(2)+')';
+    ctx.fillStyle = q.dust
+      ? 'rgba(214,203,176,'+(q.t*0.55).toFixed(2)+')'
+      : 'rgba(196,186,150,'+(q.t*0.5).toFixed(2)+')';
     ctx.beginPath(); ctx.arc(q.x-cam.x, q.y-cam.y, q.r*(1.6-q.t), 0, 6.283); ctx.fill();
   }
   // shots arc instead of running dead straight
@@ -3071,8 +3225,10 @@ function draw(){
   }
   // sparks where blows land
   for(const q of sparks){
-    ctx.fillStyle='rgba(255,'+(150+((q.h||0)*60|0))+',90,'+Math.max(0,q.t*3).toFixed(2)+')';
-    ctx.fillRect(q.x-cam.x-1, q.y-cam.y-1, 2, 2);
+    const a=Math.max(0,Math.min(1,q.t*3)).toFixed(2);
+    if(q.c) ctx.fillStyle='rgba('+q.c[0]+','+q.c[1]+','+q.c[2]+','+a+')';
+    else    ctx.fillStyle='rgba(255,'+(150+((q.h||0)*60|0))+',90,'+a+')';
+    ctx.fillRect(q.x-cam.x-1, q.y-cam.y-1, 2.2, 2.2);
   }
 
   // fog: unexplored is solid, explored-but-unseen is dimmed
@@ -3231,6 +3387,7 @@ function draw(){
     ctx.fillText('PAUSED', W/2, (H-HUD_BOT+HUD_TOP)/2);
     ctx.textAlign='left';
   }
+  cam.x=camX0; cam.y=camY0;      // the shake is a view effect, not a camera move
 }
 
 // Resources are baked once per variant. Trees carry a size and tint drawn from
@@ -3463,6 +3620,38 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     if(wp){ g.save(); g.beginPath(); g.rect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.clip();
       g.fillStyle=wp; g.fillRect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.restore(); }
   }
+  if(!isFarm){
+    // A rubble footing: every one of these was built off the ground.
+    const fy=py+h-11;
+    g.fillStyle='rgba(84,76,60,.55)'; g.fillRect(px+2,fy,w-4,9);
+    g.fillStyle='rgba(120,112,92,.40)';
+    for(let i=0;i<Math.max(3,((w-8)/9)|0);i++)
+      g.fillRect(px+4+i*9, fy+1.5+((i%2)?2.5:0), 6.5, 3);
+    g.fillStyle='rgba(20,16,10,.20)'; g.fillRect(px+2,fy,w-4,1.4);
+
+    // Half-timbering: posts, a rail, and braces in the corners.
+    const t0=wallTop+2, t1=fy-1;
+    g.strokeStyle='rgba(78,60,38,.62)'; g.lineWidth=2.2;
+    const posts=Math.max(2, Math.round((w-8)/22));
+    for(let i=0;i<=posts;i++){
+      const x=px+4+(w-8)*(i/posts);
+      g.beginPath(); g.moveTo(x,t0); g.lineTo(x,t1); g.stroke();
+    }
+    g.lineWidth=2;
+    const mid=t0+(t1-t0)*0.52;
+    g.beginPath(); g.moveTo(px+3,mid); g.lineTo(px+w-3,mid); g.stroke();
+    g.lineWidth=1.7;
+    g.beginPath();
+    g.moveTo(px+4,mid); g.lineTo(px+4+(w-8)/posts, t0);
+    g.moveTo(px+w-4,mid); g.lineTo(px+w-4-(w-8)/posts, t0);
+    g.stroke();
+    // the lit side of every timber
+    g.strokeStyle='rgba(255,240,200,.10)'; g.lineWidth=1;
+    for(let i=0;i<=posts;i++){
+      const x=px+4+(w-8)*(i/posts)-1;
+      g.beginPath(); g.moveTo(x,t0); g.lineTo(x,t1); g.stroke();
+    }
+  }
   g.fillStyle='rgba(0,0,0,.11)'; g.fillRect(px+2,py+h-10,w-4,8);
 
   if(isFarm){
@@ -3497,12 +3686,76 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     g.beginPath(); g.moveTo(px-3,py+13); g.lineTo(px+w/2,apex); g.stroke();
     g.strokeStyle='rgba(31,25,19,.35)'; g.lineWidth=1;
     g.beginPath(); g.moveTo(px-3,py+13.5); g.lineTo(px+w/2,apex); g.lineTo(px+w+3,py+13.5); g.stroke();
-    g.fillStyle='#5A4630';
-    if(w>=70) g.fillRect(px+w/2-7,py+h-22,14,20);
-    else g.fillRect(px+w/2-4,py+h-14,8,12);
-    g.fillStyle='rgba(255,246,214,.10)';
-    if(w>=70) g.fillRect(px+w/2-7,py+h-22,3,20); else g.fillRect(px+w/2-4,py+h-14,2,12);
-    bldMarkBody(g,type,owner,px,py,w,h,bldApex(type,py,w));
+    // a ridge cap along the peak and a shadow line under the eaves
+    g.strokeStyle='rgba(255,246,214,.30)'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(px+w/2-1.5,apex+1.5); g.lineTo(px+w/2+1.5,apex+1.5); g.stroke();
+    g.fillStyle='rgba(18,14,9,.30)'; g.fillRect(px-3, py+13, w+6, 2.6);
+    g.fillStyle='rgba(38,30,20,.55)';
+    for(let i=0;i<Math.max(2,((w+6)/16)|0);i++)          // rafter ends under the eaves
+      g.fillRect(px-2+i*16, py+15, 3, 2.4);
+    // Door: a stone lintel and jambs, planks, a strap hinge, a ring, and a step
+    // worn into the ground in front of it.
+    const dw=w>=70?16:10, dh=w>=70?21:14;
+    const dx=px+w/2-dw/2, dy=py+h-2-dh;
+    g.fillStyle='rgba(96,88,70,.75)';
+    g.fillRect(dx-2.5, dy-3, dw+5, 3.4);
+    g.fillRect(dx-2.5, dy-3, 2.5, dh+3);
+    g.fillRect(dx+dw, dy-3, 2.5, dh+3);
+    g.fillStyle='#4A3826'; g.fillRect(dx,dy,dw,dh);
+    g.strokeStyle='rgba(24,16,8,.45)'; g.lineWidth=1;
+    for(let i=1;i<(w>=70?4:3);i++){
+      const lx=dx+dw*(i/(w>=70?4:3));
+      g.beginPath(); g.moveTo(lx,dy+1); g.lineTo(lx,dy+dh-1); g.stroke();
+    }
+    g.fillStyle='rgba(255,246,214,.10)'; g.fillRect(dx,dy,2,dh);
+    g.fillStyle='#6E6252';
+    g.fillRect(dx+1, dy+dh*0.24, dw-2, 2);
+    g.fillRect(dx+1, dy+dh*0.68, dw-2, 2);
+    g.strokeStyle='#6E6252'; g.lineWidth=1.4;
+    g.beginPath(); g.arc(dx+dw-3.5, dy+dh*0.52, 1.9, 0, 6.283); g.stroke();
+    g.fillStyle='rgba(150,140,116,.40)';
+    g.beginPath(); g.ellipse(px+w/2, py+h-1, dw*0.85, 3, 0, 0, 6.283); g.fill();
+    if(CHIMNEY[type]){
+      const cx2=px+w*CHIMNEY[type], ap2=bldApex(type,py,w);
+      const roofY=py+13+(ap2-(py+13))*(1-Math.abs(cx2-(px+w/2))/(w/2+3));
+      g.fillStyle='#6E6252'; g.fillRect(cx2-4, roofY-13, 8, 15);
+      g.fillStyle='rgba(255,246,214,.16)'; g.fillRect(cx2-4, roofY-13, 2.6, 15);
+      g.fillStyle='rgba(24,18,10,.30)'; g.fillRect(cx2+2, roofY-13, 2, 15);
+      g.fillStyle='#585044'; g.fillRect(cx2-5.4, roofY-15.5, 10.8, 3);
+      g.fillStyle='rgba(14,10,6,.75)'; g.fillRect(cx2-2.4, roofY-14.6, 4.8, 1.8);
+    }
+    // The insignia hangs on a board under the eaves rather than being painted
+    // on the plaster, which is what makes a trade building read as a trade.
+    if(SIGNED[type]){
+      const sw=Math.min(38, Math.max(26, w*0.46)), sh=sw*0.66;
+      const sx2=px+w/2-sw/2, sy2=py+16;
+      g.strokeStyle='#4A3B26'; g.lineWidth=1.4;
+      g.beginPath();
+      g.moveTo(sx2+sw*0.22, sy2-4); g.lineTo(sx2+sw*0.22, sy2);
+      g.moveTo(sx2+sw*0.78, sy2-4); g.lineTo(sx2+sw*0.78, sy2);
+      g.stroke();
+      g.fillStyle='rgba(20,15,9,.28)';
+      g.fillRect(sx2+2, sy2+2.5, sw, sh);
+      g.fillStyle='#6B5334'; g.fillRect(sx2, sy2, sw, sh);
+      g.fillStyle='rgba(255,246,214,.14)'; g.fillRect(sx2, sy2, sw, 2);
+      g.fillStyle='rgba(24,16,8,.26)'; g.fillRect(sx2, sy2+sh-2, sw, 2);
+      g.strokeStyle='rgba(28,20,12,.55)'; g.lineWidth=1;
+      g.strokeRect(sx2+0.5, sy2+0.5, sw-1, sh-1);
+      // The marks were drawn for a wall and use two conventions: some anchor to
+      // px+N, some to the centre. Handing them a 42-wide box makes both agree on
+      // the same point, which is then placed at the middle of the board.
+      g.save();
+      g.beginPath(); g.rect(sx2+1.5, sy2+1.5, sw-3, sh-3); g.clip();
+      const k=Math.min((sw-6)/30, (sh-5)/20);
+      g.translate(sx2+sw/2, sy2+sh/2);
+      g.scale(k,k);
+      g.translate(-21, -28);
+      bldMarkBody(g,type,owner,0,0,42,56,-12);
+      g.restore();
+    } else {
+      bldMarkBody(g,type,owner,px,py,w,h,bldApex(type,py,w));
+    }
+    bldProps(g,type,px,py,w,h);
     // the flagpole is static; the cloth on it is drawn live
     if(d.roof){
       const cx=px+w/2, ap=bldApex(type,py,w);
@@ -3513,6 +3766,153 @@ function bldBody(g,type,owner,tier,px,py,w,h){
   g.strokeStyle='rgba(31,25,19,.55)'; g.lineWidth=1;
   g.strokeRect(px+2.5, wallTop+0.5, w-5, (py+h)-wallTop-3);
   bldDamage(g,type,px,py,w,h,tier);
+}
+
+// What is stacked against the wall. Every building keeps something outside it,
+// and it is the fastest way to tell two identical boxes apart at a glance.
+function bldProps(g,type,px,py,w,h){
+  const base=py+h-3, L=px+5, R=px+w-5;
+  const barrel=(x,y,r)=>{
+    g.fillStyle='rgba(20,15,9,.26)';
+    g.beginPath(); g.ellipse(x+1.5,y+1,r*1.05,r*0.42,0,0,6.283); g.fill();
+    g.fillStyle='#6B4C2E'; g.fillRect(x-r, y-r*2.1, r*2, r*2.1);
+    g.fillStyle='rgba(255,246,214,.13)'; g.fillRect(x-r, y-r*2.1, r*0.7, r*2.1);
+    g.fillStyle='#4E4438';
+    g.fillRect(x-r, y-r*1.7, r*2, 1.4); g.fillRect(x-r, y-r*0.7, r*2, 1.4);
+    g.fillStyle='#7A5936';
+    g.beginPath(); g.ellipse(x, y-r*2.1, r, r*0.42, 0,0,6.283); g.fill();
+  };
+  const crate=(x,y,sw)=>{
+    g.fillStyle='rgba(20,15,9,.24)';
+    g.beginPath(); g.ellipse(x+1.5,y+1,sw*0.62,sw*0.24,0,0,6.283); g.fill();
+    g.fillStyle='#7A6038'; g.fillRect(x-sw/2, y-sw, sw, sw);
+    g.fillStyle='rgba(255,246,214,.12)'; g.fillRect(x-sw/2, y-sw, sw*0.35, sw);
+    g.strokeStyle='rgba(40,28,16,.5)'; g.lineWidth=1;
+    g.strokeRect(x-sw/2+0.5, y-sw+0.5, sw-1, sw-1);
+    g.beginPath(); g.moveTo(x-sw/2, y-sw); g.lineTo(x+sw/2, y); g.stroke();
+  };
+  const logs=(x,y)=>{
+    g.fillStyle='rgba(20,15,9,.24)';
+    g.beginPath(); g.ellipse(x+2,y+1,13,4,0,0,6.283); g.fill();
+    for(let r=0;r<2;r++) for(let i=0;i<3-r;i++){
+      const lx=x-9+r*4.5+i*9, ly=y-3-r*5.5;
+      g.fillStyle='#6E4E2C';
+      g.beginPath(); g.ellipse(lx,ly,4.4,4.0,0,0,6.283); g.fill();
+      g.fillStyle='#A8834E';
+      g.beginPath(); g.ellipse(lx-0.8,ly-0.6,2.6,2.4,0,0,6.283); g.fill();
+      g.strokeStyle='rgba(60,40,20,.5)'; g.lineWidth=0.8;
+      g.beginPath(); g.arc(lx-0.8,ly-0.6,1.4,0,6.283); g.stroke();
+    }
+  };
+  const sacks=(x,y)=>{
+    for(let i=0;i<3;i++){
+      const sx=x-8+i*8, sy=y-(i===1?2:0);
+      g.fillStyle='rgba(20,15,9,.22)';
+      g.beginPath(); g.ellipse(sx+1,sy+1,6,2.4,0,0,6.283); g.fill();
+      g.fillStyle='#C4B389';
+      g.beginPath(); g.ellipse(sx,sy-5,5.4,6,0,0,6.283); g.fill();
+      g.fillStyle='rgba(255,250,224,.18)';
+      g.beginPath(); g.ellipse(sx-1.6,sy-6.6,2.4,2.8,0,0,6.283); g.fill();
+      g.strokeStyle='rgba(90,74,44,.6)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(sx-2.6,sy-9.6); g.lineTo(sx+2.6,sy-9.6); g.stroke();
+    }
+  };
+  const oreHeap=(x,y)=>{
+    g.fillStyle='rgba(20,15,9,.24)';
+    g.beginPath(); g.ellipse(x+2,y+1,12,4,0,0,6.283); g.fill();
+    g.fillStyle='#6E6657';
+    g.beginPath(); g.moveTo(x-11,y); g.lineTo(x,y-11); g.lineTo(x+11,y); g.closePath(); g.fill();
+    g.fillStyle='#8B8272';
+    g.beginPath(); g.moveTo(x-11,y); g.lineTo(x,y-11); g.lineTo(x-2,y); g.closePath(); g.fill();
+    g.fillStyle='#E0A62E';
+    g.beginPath(); g.arc(x-3,y-4,2.2,0,6.283); g.fill();
+    g.beginPath(); g.arc(x+4,y-2.4,1.8,0,6.283); g.fill();
+  };
+  switch(type){
+    case 'lumber': logs(L+12, base); break;
+    case 'mining': oreHeap(R-13, base); break;
+    case 'mill':   sacks(L+13, base); break;
+    case 'market': barrel(L+8, base, 4.6); crate(R-11, base, 11); break;
+    case 'dock':   barrel(R-9, base, 4.2); crate(L+10, base, 9); break;
+    case 'smith': {                            // an anvil on a block
+      g.fillStyle='rgba(20,15,9,.26)';
+      g.beginPath(); g.ellipse(R-11,base+1,9,3,0,0,6.283); g.fill();
+      g.fillStyle='#5A4630'; g.fillRect(R-16, base-7, 10, 7);
+      g.fillStyle='#4E4438';
+      g.beginPath();
+      g.moveTo(R-18, base-11); g.lineTo(R-4, base-11); g.lineTo(R-7, base-8);
+      g.lineTo(R-14, base-8); g.closePath(); g.fill();
+      g.fillStyle='rgba(220,214,200,.22)'; g.fillRect(R-18, base-11, 14, 1.6);
+      break;
+    }
+    case 'barracks': {                         // a rack of spears
+      g.strokeStyle='#5A4630'; g.lineWidth=1.8;
+      g.beginPath(); g.moveTo(L+4,base); g.lineTo(L+4,base-13);
+      g.moveTo(L+20,base); g.lineTo(L+20,base-13);
+      g.moveTo(L+2,base-12); g.lineTo(L+22,base-12); g.stroke();
+      g.strokeStyle='#7A6038'; g.lineWidth=1.4;
+      for(let i=0;i<4;i++){ const sx=L+5.5+i*4.2;
+        g.beginPath(); g.moveTo(sx,base-1); g.lineTo(sx+2.4,base-19); g.stroke(); }
+      g.fillStyle='#B9BCC0';
+      for(let i=0;i<4;i++){ const sx=L+5.5+i*4.2;
+        g.beginPath(); g.moveTo(sx+2.4,base-22); g.lineTo(sx+3.9,base-18);
+        g.lineTo(sx+0.9,base-18); g.closePath(); g.fill(); }
+      break;
+    }
+    case 'range': {                            // a straw butt
+      g.fillStyle='rgba(20,15,9,.24)';
+      g.beginPath(); g.ellipse(R-11,base+1,8,3,0,0,6.283); g.fill();
+      g.fillStyle='#C7B27A';
+      g.beginPath(); g.arc(R-12, base-8, 7.6, 0, 6.283); g.fill();
+      g.fillStyle='#EBDFC4'; g.beginPath(); g.arc(R-12, base-8, 4.8, 0, 6.283); g.fill();
+      g.fillStyle='#C2453D'; g.beginPath(); g.arc(R-12, base-8, 2.2, 0, 6.283); g.fill();
+      g.strokeStyle='#5A4630'; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(R-12,base-1); g.lineTo(R-12,base-4); g.stroke();
+      break;
+    }
+    case 'stable': {                           // a water trough and a bale
+      g.fillStyle='#6B4C2E'; g.fillRect(L+3, base-7, 20, 7);
+      g.fillStyle='#4E8FA8'; g.fillRect(L+4.5, base-5.6, 17, 3.2);
+      g.fillStyle='rgba(220,240,246,.35)'; g.fillRect(L+4.5, base-5.6, 17, 1);
+      g.fillStyle='#C7B27A'; g.fillRect(R-16, base-9, 12, 9);
+      g.strokeStyle='rgba(120,98,52,.6)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(R-16,base-6); g.lineTo(R-4,base-6); g.stroke();
+      break;
+    }
+    case 'uni': {                              // a reading bench
+      g.fillStyle='#5A4630'; g.fillRect(L+4, base-6, 22, 3);
+      g.fillRect(L+5, base-3, 2.4, 3); g.fillRect(L+23, base-3, 2.4, 3);
+      g.fillStyle='#EBDFC4'; g.fillRect(L+9, base-9, 9, 3.2);
+      g.fillStyle='#9B2036'; g.fillRect(L+9, base-9, 9, 1);
+      break;
+    }
+    case 'siege': {                            // stacked shot
+      g.fillStyle='rgba(20,15,9,.24)';
+      g.beginPath(); g.ellipse(R-12,base+1,10,3.4,0,0,6.283); g.fill();
+      for(const [ox,oy,r] of [[-6,0,4],[1,0,4],[8,0,4],[-2.5,-5.5,4],[4.5,-5.5,4],[1,-11,4]]){
+        g.fillStyle='#6E6657';
+        g.beginPath(); g.arc(R-12+ox, base-r+oy, r, 0, 6.283); g.fill();
+        g.fillStyle='rgba(255,250,236,.14)';
+        g.beginPath(); g.arc(R-13+ox, base-r-1+oy, r*0.45, 0, 6.283); g.fill();
+      }
+      break;
+    }
+    case 'tc': case 'castle': {                // a well
+      const wx=L+13;
+      g.fillStyle='rgba(20,15,9,.26)';
+      g.beginPath(); g.ellipse(wx+2,base+1,9,3.4,0,0,6.283); g.fill();
+      g.fillStyle='#6E6657'; g.fillRect(wx-8, base-8, 16, 8);
+      g.fillStyle='#8B8272'; g.fillRect(wx-8, base-8, 5, 8);
+      g.fillStyle='#2A2018';
+      g.beginPath(); g.ellipse(wx, base-8, 8, 3, 0,0,6.283); g.fill();
+      g.strokeStyle='#5A4630'; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(wx-7,base-8); g.lineTo(wx-7,base-17);
+      g.moveTo(wx+7,base-8); g.lineTo(wx+7,base-17); g.stroke();
+      g.fillStyle='#6B4C2E';
+      g.beginPath(); g.moveTo(wx-10,base-16); g.lineTo(wx,base-21); g.lineTo(wx+10,base-16); g.closePath(); g.fill();
+      break;
+    }
+  }
 }
 
 // Cracks, scorch and, at the last tier, a hole punched clean through.
@@ -3649,6 +4049,17 @@ function drawBld(b){
     }
   }
 
+  // Blows leave marks that fade, so a building under attack looks it even
+  // between hits.
+  if(b.scars&&b.scars.length){
+    for(const sc of b.scars){
+      const a=Math.max(0,Math.min(1,sc.t/sc.life));
+      ctx.fillStyle='rgba(38,30,20,'+(a*0.55).toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(px+w/2+sc.dx, py+h/2+sc.dy, sc.r, 0, 6.283); ctx.fill();
+      ctx.fillStyle='rgba(232,220,190,'+(a*0.22).toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(px+w/2+sc.dx-sc.r*0.3, py+h/2+sc.dy-sc.r*0.3, sc.r*0.45, 0, 6.283); ctx.fill();
+    }
+  }
   if(b.garr&&b.garr.length){
     ctx.fillStyle=teamLight(b.owner);
     for(let i=0;i<Math.min(b.garr.length,8);i++)
@@ -3896,7 +4307,18 @@ function unitBody(g,type,owner,x,top,pose){
 function drawFallen(){
   for(const q of fallen){
     const p=q.t/q.life, x=q.x-cam.x, y=q.y-cam.y;
-    if(x<-40||y<-40||x>innerWidth+40||y>innerHeight+40) continue;
+    if(x<-60||y<-60||x>innerWidth+60||y>innerHeight+60) continue;
+    if(q.tree!==undefined){                          // a felled trunk, going over
+      const sp=treeSprite(q.tree);
+      const drop2=Math.min(1,(1-p)*2.2);
+      ctx.save();
+      ctx.globalAlpha=Math.min(1,p*2.2);
+      ctx.translate(x,y+6);
+      ctx.rotate(q.tilt*drop2);
+      ctx.drawImage(sp.c, Math.round(-sp.w/2), Math.round(-sp.h), sp.w, sp.h);
+      ctx.restore();
+      continue;
+    }
     const drop=Math.min(1,(1-p)*4);                  // tips over in the first moment
     ctx.save();
     ctx.globalAlpha=Math.min(1,p*1.8);
@@ -4637,7 +5059,7 @@ function restore(snap){
   stats=snap.stats;
   objDone=Object.create(null); for(const k of snap.obj) objDone[k]=true;
   aiState=snap.ai; cam={x:snap.cam.x,y:snap.cam.y};
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
   hist=snap.hist||[]; histAt=gameTime+8;
   autosaveAt=gameTime+45;
 
@@ -4834,7 +5256,24 @@ function closeAll(){
   document.getElementById('over').style.display='none';
   paused=false;
 }
+function setMix(which,pct){
+  const v=Math.max(0,Math.min(100,Math.round(pct)))/100;
+  if(which==='fx'){ SFX.setFx(v); lsSet('fxvol',String(Math.round(v*100))); }
+  else { SFX.setAmb(v); lsSet('ambvol',String(Math.round(v*100))); }
+  syncSettings();
+}
 function syncSettings(){
+  const fv=document.getElementById('fxVol'), av=document.getElementById('ambVol');
+  if(fv){
+    fv.value=Math.round(SFX.fxVol*100);
+    document.getElementById('fxVolVal').textContent=Math.round(SFX.fxVol*100)+'%';
+    fv.disabled=!SFX.on;
+  }
+  if(av){
+    av.value=Math.round(SFX.ambVol*100);
+    document.getElementById('ambVolVal').textContent=Math.round(SFX.ambVol*100)+'%';
+    av.disabled=!SFX.on;
+  }
   document.getElementById('mSound').textContent='Sound: '+(SFX.on?'on':'off');
   document.getElementById('mSpeed').textContent='Speed: '+speed+'×';
   document.getElementById('mChron').textContent='Chronicle: '+(chronOpen?'shown':'hidden');
@@ -4846,6 +5285,11 @@ function cycleSpeed(){
   speed=opts[(opts.indexOf(speed)+1)%opts.length];
   syncSettings();
 }
+(function restoreMix(){
+  const f=parseInt(lsGet('fxvol'),10), a=parseInt(lsGet('ambvol'),10);
+  if(!isNaN(f)) SFX.fxVol=Math.max(0,Math.min(1,f/100));
+  if(!isNaN(a)) SFX.ambVol=Math.max(0,Math.min(1,a/100));
+})();
 function toggleSound(){
   SFX.on=!SFX.on;
   lsSet('sound', SFX.on?'1':'0');
@@ -5353,6 +5797,14 @@ function findKing(){
   updatePanel(); sfx('select');
 }
 document.getElementById('kingBtn').onclick=findKing;
+{
+  const fv=document.getElementById('fxVol'), av=document.getElementById('ambVol');
+  // 'input' so it moves while dragging; the context may not exist until the
+  // first gesture, so make sure there is one before trying to hear the change.
+  fv.addEventListener('input', ()=>{ SFX.init(); setMix('fx', +fv.value); });
+  fv.addEventListener('change', ()=>{ if(SFX.on) sfx('slash'); });
+  av.addEventListener('input', ()=>{ SFX.init(); setMix('amb', +av.value); });
+}
 document.getElementById('mSound').onclick=toggleSound;
 document.getElementById('mSpeed').onclick=cycleSpeed;
 document.getElementById('mChron').onclick=toggleChron;
@@ -5416,7 +5868,7 @@ document.getElementById('chronCount').textContent='0 / '+OBJECTIVES.length;
 ents=[]; nextId=1; sides=[newSide(PLAYER),newSide(ENEMY),newSide(MARAUDER)];
 stats={gathered:0,gath:{f:0,w:0,g:0},trained:0,soldiers:0,killed:0,razed:0,techs:0,trades:0,lost:0,fish:0,guard:0};
 objDone=Object.create(null); groups=Object.create(null);
-shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
+shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
 running=false; paused=false; ended=false;
 aiState={t:0,wave:0,waveSize:5,attacking:false,lastAttack:0,camps:0,harass:false};
 setMapSize(mapSize); genMap();
