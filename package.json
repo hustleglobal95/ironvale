@@ -4,12 +4,13 @@
   "description": "A single-file real-time strategy game. No build step, no runtime dependencies.",
   "private": true,
   "scripts": {
-    "test": "node test/click.test.js && node test/economy.test.js && node test/combat.test.js && node test/features.test.js && node test/water.test.js",
+    "test": "node test/click.test.js && node test/economy.test.js && node test/combat.test.js && node test/features.test.js && node test/water.test.js && node test/factions.test.js",
     "test:click": "node test/click.test.js",
     "test:economy": "node test/economy.test.js",
     "test:combat": "node test/combat.test.js",
     "test:features": "node test/features.test.js",
     "test:water": "node test/water.test.js",
+    "test:factions": "node test/factions.test.js",
     "perf": "node test/perf.js",
     "check": "node scripts/check-syntax.js",
     "play": "node scripts/serve.js"

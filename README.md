@@ -5,7 +5,8 @@ dependencies — open it in a browser and it runs.
 
 Gather food, wood and gold; raise a town; climb four ages; build an army and take
 the valley. Each side has exactly one king: he is the best unit on the field and
-the game ends the moment he falls.
+the game ends the moment he falls. Or skip the siege entirely — plant your colony
+standard in their kingdom and hold it for a minute.
 
 ```
 git clone <this repo>
@@ -33,6 +34,22 @@ Select, attack-move, patrol, hold ground, garrison, and control groups.
 **The king.** One per side, with an aura that strengthens nearby troops. Ctrl+A
 deliberately leaves him out of a mass selection so he is never swept into a
 charge by accident.
+
+**Two ways to win.** Break their king or their town center — or take the other
+road: train a standard bearer, walk him into their kingdom, plant the colony
+standard and hold it for sixty seconds. Planting it is not a quiet act. They see
+it, they come off their raid clock, and everything they have turns toward the
+flag.
+
+**Villager trades.** Beyond the common villager, a mill raises farmhands, a
+lumber camp raises woodcutters and a mining camp raises prospectors. Each works
+its own resource half again as fast and everything else slower, so the shape of
+your population becomes a decision.
+
+**A third faction.** Marauder stockades sit in the middle ground between the two
+bases. They owe nothing to either banner and raid both. Burning one stops the
+raids from it and pays out what they had taken — and the gold worth expanding
+for tends to sit near them.
 
 **Water.** Lakes, shorelines, docks, fishing boats and war galleys. Lakes are
 sited off the line between the two bases, so there is always a land road between
@@ -65,6 +82,7 @@ npm test
 | `combat.test.js` | Orders: attack, attack-move, hold, stop, minimap orders, double-click type-select |
 | `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger |
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
+| `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
 
 Individual suites: `npm run test:water`, and so on.
 
@@ -89,7 +107,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the five suites
+test/*.test.js         the six suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block
@@ -111,6 +129,17 @@ stamped on crisply afterwards.
 **Surfaces are generated, not shipped.** Tileable value noise is synthesised at
 load and used as a fill pattern for turf, plaster, thatch, ashlar and timber. It
 costs nothing in page weight.
+
+**Water has depth.** A breadth-first sweep out from every shoreline gives each
+water tile its distance from land, and the ramp from shallow to deep is baked
+into the ground chunks. The swell and the foam are written one pixel per tile
+into a small buffer and scaled up with smoothing — drawn as tile rectangles they
+read as stripes, which is the exact grid the depth ramp exists to remove. The
+beach is drawn the same way, so a diagonal coast stops staircasing.
+
+**Units walk.** Bodies are baked per type, side and pose: a standing pose, four
+walk frames and an attack lunge, with the stride driven off the same phase as
+the body's bob so feet and torso agree.
 
 **Entity lists are cached.** `bldCache` / `unitCache` / `liveCache` are
 invalidated by `touchLists()` rather than rebuilt per frame, which is what makes
