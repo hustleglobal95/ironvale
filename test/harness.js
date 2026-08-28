@@ -41,6 +41,7 @@ window.__IV={
            s.w>=d.cost.w && s.g>=d.cost.g && s.f>=d.cost.f;
   },
   plant:plantStandard, flag:()=>standardOf(PLAYER),
+  sfxObj:()=>SFX, play:(n)=>sfx(n), heat:()=>battleHeat, wet2:()=>visWater,
   pick:(sx,sy)=>{ const w=toWorld(sx,sy); const p=pickAt(w.x,w.y);
     return p?{t:p.type,o:p.owner,k:p.kind,id:p.id}:null; },
   spriteCount:()=>Object.keys(SPRITE).length,
