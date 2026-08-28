@@ -97,7 +97,10 @@ for(const dy of [10,4,0,-6,-12,-18,-22]){
           const x=tc.x+Math.cos(a*0.2618)*r*28, y=tc.y+Math.sin(a*0.2618)*r*28;
           if(x<60||y<60||x>d[2]-60||y>d[3]-60) continue;
           if(g.wet((x/28)|0,(y/28)|0)) continue;
-          if(g.ents().some(e=>!e.dead&&e.kind!=='res'&&Math.hypot(e.x-x,e.y-y)<70)) continue;
+          // Hostiles roam now, so leave a wide berth: one can close the gap during
+      // the settle wait and win the click.
+      if(g.ents().some(e=>!e.dead&&e.kind!=='res'&&Math.hypot(e.x-x,e.y-y)<70)) continue;
+      if(g.ents().some(e=>!e.dead&&e.kind==='unit'&&e.owner!==0&&Math.hypot(e.x-x,e.y-y)<200)) continue;
           if(g.ents().some(e=>!e.dead&&e.kind==='res'&&Math.hypot(e.x-x,e.y-y)<34)) continue;
           px=x; py=y; break;
         }
@@ -110,6 +113,10 @@ for(const dy of [10,4,0,-6,-12,-18,-22]){
       return [Math.round(u.x-c.x), Math.round(u.y-c.y)];
     });
     await page.waitForTimeout(300);
+    const q=await page.evaluate(()=>{ const g=window.__IV,c=g.cam();
+      const u=g.ents().filter(e=>e.kind==='unit'&&e.owner===0&&e.type==='vil').pop();
+      return [Math.round(u.x-c.x), Math.round(u.y-c.y)];});
+    p[0]=q[0]; p[1]=q[1];
     await page.mouse.move(p[0],p[1]+dy); await page.mouse.down();
     if(jx||jy) await page.mouse.move(p[0]+jx,p[1]+dy+jy);
     await page.mouse.up(); await page.waitForTimeout(90);

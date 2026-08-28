@@ -47,8 +47,14 @@ await page.waitForTimeout(300);
 const before=await page.evaluate(()=>Math.round(window.__IV.sides()[0].f));
 await page.evaluate(()=>{ const d=window.__IV.ents().find(e=>e.type==='dock'&&e.owner===0);
   for(let i=0;i<3;i++) window.__IV.enq(d,'fisher'); });
-await page.waitForTimeout(14000);
-const boats=await page.evaluate(()=>window.__IV.ents().filter(e=>e.type==='fisher'&&e.owner===0).length);
+// Build time scales with how far the dock landed from the base, so wait for the
+// first hull rather than a fixed delay.
+let boats=0;
+for(let i=0;i<30;i++){
+  await page.waitForTimeout(1000);
+  boats=await page.evaluate(()=>window.__IV.ents().filter(e=>e.type==='fisher'&&e.owner===0).length);
+  if(boats>=1) break;
+}
 ok('the dock launches fishing boats ('+boats+')', boats>=1);
 await page.screenshot({path:require('path').join(__dirname,'..','.tmp','w_dock.png')});
 await page.waitForTimeout(45000);

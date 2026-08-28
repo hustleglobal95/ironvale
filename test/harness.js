@@ -40,6 +40,9 @@ window.__IV={
     return tileFree(tx,ty,d.w,d.h,0,placing) &&
            s.w>=d.cost.w && s.g>=d.cost.g && s.f>=d.cost.f;
   },
+  plant:plantStandard, flag:()=>standardOf(PLAYER),
+  pick:(sx,sy)=>{ const w=toWorld(sx,sy); const p=pickAt(w.x,w.y);
+    return p?{t:p.type,o:p.owner,k:p.kind,id:p.id}:null; },
   spriteCount:()=>Object.keys(SPRITE).length,
   chunks:()=>chunkCache.size,
   fallen:()=>fallen, spent:()=>spent

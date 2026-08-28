@@ -77,11 +77,17 @@ const cam2=await page.evaluate(()=>window.__IV.cam());
 // Units win a left-click over the building they are standing on, which is the
 // behaviour we want in play. Try a few points inside the footprint until one
 // lands on bare wall.
+let picked=false;
 for(const [dx,dy] of [[0,-26],[0,0],[-30,-26],[30,-26],[-30,10],[30,10]]){
   await page.mouse.click(Math.round(br.x-cam2.x+dx), Math.round(br.y-cam2.y+dy));
   await page.waitForTimeout(250);
-  if(/Barracks/.test((await hud(page)).sel)) break;
+  if(/Barracks/.test((await hud(page)).sel)){ picked=true; break; }
 }
+if(!picked) console.log('   could not select the barracks:',
+  JSON.stringify(await page.evaluate(()=>({sel:document.getElementById('selTitle').textContent,
+    alive:!!window.__IV.ents().find(e=>e.type==='barracks'&&e.owner===0&&!e.dead),
+    building:(window.__IV.ents().find(e=>e.type==='barracks'&&e.owner===0)||{}).building,
+    cam:window.__IV.cam()}))));
 const bc=await cards();
 ok('barracks offers the upgrade line', bc.some(c=>/Man-at-Arms/.test(c)) && bc.some(c=>/Long Swordsman/.test(c)));
 ok('long swordsman is gated on man-at-arms',
