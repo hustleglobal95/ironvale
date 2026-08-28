@@ -879,6 +879,11 @@ const keys=Object.create(null);
 let mmDrag=false, lastGroupTap={k:null,t:0}, lastPick={id:0,t:0}, lastKingCry=-99, lastBreakCry=-99, lastStallCry=-99;
 let aiming=false, patrolling=false, marks=[], lineDrag=null, hover=null;
 let puffs=[], sparks=[], fallen=[], spent=[], vignette=null, swell=null;
+let battleHeat=0, visWater=0;
+function onScreen(x,y,pad){
+  pad=pad||0;
+  return x>cam.x-pad && y>cam.y-pad && x<cam.x+innerWidth+pad && y<cam.y+innerHeight+pad;
+}
 
 let seed=20260827;
 function rnd(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
@@ -1722,6 +1727,14 @@ function doBuy(o,k){
 function hit(src,t){
   const dmg=damageOf(src,t);
   t.hp-=dmg; t.flash=0.16;
+  battleHeat=Math.min(1.6, battleHeat+0.21);
+  // Only sound blows the player can see, or a battle off-screen is as loud as
+  // one in front of them.
+  if(onScreen(t.x,t.y,90)){
+    if(t.kind==='bld') sfx('thud');
+    else if(uRange(src)>60) sfx('bow');
+    else sfx(armorOf(t)>=4 ? 'clang' : 'slash');
+  }
   if(sparks.length<160){
     const n=t.kind==='bld'?2:3;
     for(let i=0;i<n;i++)
@@ -2217,6 +2230,147 @@ const SFX={
       this.master.gain.value=0.14;
       this.master.connect(this.ctx.destination);
     }catch(e){ this.ctx=null; }
+    this.buildAmbience();
+  },
+
+  // ---- ambience -----------------------------------------------------------
+  // One looping noise buffer feeds every continuous bed. Wind and water are the
+  // same source through different filters, which is both cheaper and more
+  // convincing than two generators - real wind and real water share a spectrum
+  // and differ mostly in where the energy sits.
+  noiseBuf(){
+    if(this._noise) return this._noise;
+    const ctx=this.ctx, len=Math.floor(ctx.sampleRate*3);
+    const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    let b0=0,b1=0,b2=0;
+    for(let i=0;i<len;i++){
+      const w=Math.random()*2-1;                 // pinked: less hiss, more air
+      b0=0.99765*b0+w*0.0990460;
+      b1=0.96300*b1+w*0.2965164;
+      b2=0.57000*b2+w*1.0526913;
+      d[i]=(b0+b1+b2+w*0.1848)*0.16;
+    }
+    // taper the seam so the loop point is inaudible
+    const fade=Math.floor(ctx.sampleRate*0.05);
+    for(let i=0;i<fade;i++){ const k=i/fade; d[i]*=k; d[len-1-i]*=k; }
+    this._noise=buf;
+    return buf;
+  },
+  // Beds run on pink noise, which is what wind and water sound like. A blade
+  // through the air is broadband and bright, and pink noise has almost nothing
+  // left up where that lives - so transients get their own white source.
+  whiteBuf(){
+    if(this._white) return this._white;
+    const ctx=this.ctx, len=Math.floor(ctx.sampleRate*1.5);
+    const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*0.9;
+    this._white=buf;
+    return buf;
+  },
+  bed(freq,q,gain){
+    const ctx=this.ctx;
+    const src=ctx.createBufferSource();
+    src.buffer=this.noiseBuf(); src.loop=true;
+    const f=ctx.createBiquadFilter();
+    f.type='bandpass'; f.frequency.value=freq; f.Q.value=q;
+    const g=ctx.createGain(); g.gain.value=0;
+    src.connect(f); f.connect(g); g.connect(this.amb);
+    src.start();
+    return {src, f, g, target:gain};
+  },
+  buildAmbience(){
+    if(!this.ctx||this.amb) return;
+    try{
+      this.amb=this.ctx.createGain();
+      this.amb.gain.value=0.0;
+      this.amb.connect(this.master);
+      this.wind=this.bed(340,0.65,1);
+      this.gust=this.bed(760,1.4,1);            // the top of a gust, over the bed
+      this.water=this.bed(980,0.55,1);
+      this.ambOn=true;
+      this.gustPhase=0;
+      this.chimeAt=14+Math.random()*14;
+    }catch(e){ this.amb=null; }
+  },
+  // Called once a frame. Everything here is a slow ramp, never a jump: a step
+  // change in a filter or a gain is audible as a click.
+  ambience(dt,env){
+    if(!this.ctx||!this.amb) return;
+    const t=this.ctx.currentTime;
+    const on=this.on?1:0;
+    this.amb.gain.setTargetAtTime(on*(0.85-Math.min(0.42, env.battle*0.42)), t, 0.30);
+    if(!on) return;
+
+    // Wind gusts on a slow wander rather than a sine, so it never sounds cyclic.
+    this.gustPhase+=dt*(0.06+Math.random()*0.02);
+    const g1=0.5+0.5*Math.sin(this.gustPhase*1.7);
+    const g2=0.5+0.5*Math.sin(this.gustPhase*0.61+1.3);
+    const gust=Math.min(1,(g1*0.65+g2*0.55));
+    this.wind.g.gain.setTargetAtTime(0.20+gust*0.20, t, 0.6);
+    this.wind.f.frequency.setTargetAtTime(300+gust*180, t, 0.9);
+    this.gust.g.gain.setTargetAtTime(gust*gust*0.11, t, 0.8);
+
+    // Water is only there when water is on screen, and rises as it fills more of it.
+    this.water.g.gain.setTargetAtTime(Math.min(0.30, env.water*0.62), t, 0.8);
+    this.water.f.frequency.setTargetAtTime(880+env.water*260, t, 1.2);
+
+    // Chimes: only in quiet, and never during a fight.
+    this.chimeAt-=dt;
+    if(this.chimeAt<=0){
+      this.chimeAt = env.battle>0.15 ? 6 : (16+Math.random()*20);
+      if(env.battle<0.08) this.chime();
+    }
+  },
+  // A struck bell: a few inharmonic partials with long, uneven decays.
+  chime(){
+    if(!this.ctx) return;
+    const ctx=this.ctx, t=ctx.currentTime;
+    const PENT=[523.25,587.33,698.46,783.99,1046.50];
+    const root=PENT[(Math.random()*PENT.length)|0];
+    const parts=[[1,1,2.8],[2.76,0.34,2.1],[5.4,0.14,1.4]];
+    for(const [mul,amp,dur] of parts){
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type='sine';
+      o.frequency.value=root*mul*(1+(Math.random()-0.5)*0.004);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.16*amp, t+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+      o.connect(g); g.connect(this.amb);
+      o.start(t); o.stop(t+dur+0.05);
+    }
+  },
+  // A short burst of filtered noise with a falling band: the air being cut.
+  slash(pitch,len,vol){
+    if(!this.ctx) return;
+    const ctx=this.ctx, t=ctx.currentTime;
+    const src=ctx.createBufferSource();
+    src.buffer=this.whiteBuf(); src.loop=true;
+    const f=ctx.createBiquadFilter();
+    f.type='bandpass'; f.Q.value=1.0;
+    f.frequency.setValueAtTime(pitch,t);
+    f.frequency.exponentialRampToValueAtTime(pitch*0.28, t+len);
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol, t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+len);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t+len+0.02);
+  },
+  // Two detuned partials beating against each other: struck metal.
+  ring(f0,dur,vol){
+    if(!this.ctx) return;
+    const ctx=this.ctx, t=ctx.currentTime;
+    for(const d of [1,1.0086]){
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type='triangle'; o.frequency.value=f0*d;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(vol, t+0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t+dur+0.02);
+    }
   },
   tone(f,to,dur,type,vol){
     if(!this.ctx) return;
@@ -2241,6 +2395,10 @@ const SFX_DEFS={
   age:   ()=>{[440,554,659,880].forEach((f,i)=>setTimeout(()=>SFX.tone(f,f,0.28,'triangle',0.4),i*110));},
   alert: ()=>{SFX.tone(240,190,0.16,'square',0.42); setTimeout(()=>SFX.tone(200,160,0.18,'square',0.4),190);},
   death: ()=>SFX.tone(180,90,0.16,'sawtooth',0.26),
+  slash: ()=>{ SFX.slash(2500+Math.random()*1000, 0.15, 0.72); },
+  clang: ()=>{ SFX.slash(1900,0.09,0.46); SFX.ring(1750+Math.random()*260, 0.26, 0.15); },
+  bow:   ()=>{ SFX.slash(1450,0.10,0.58); SFX.ring(320,0.07,0.10); },
+  thud:  ()=>{ SFX.tone(120,70,0.12,'sine',0.34); SFX.slash(560,0.09,0.30); },
   error: ()=>SFX.tone(130,110,0.12,'square',0.3)
 };
 function sfx(name){
@@ -2509,6 +2667,7 @@ function frame(now){
     tickSide(PLAYER,sdt); tickSide(ENEMY,sdt);
     tickStandards(sdt);
     tickMarauders(sdt);
+    battleHeat=Math.max(0, battleHeat-dt*0.30);
     for(const e of ents){
       if(e.dead) continue;
       if(e.kind==='unit') updateUnit(e,sdt);
@@ -2559,6 +2718,10 @@ function frame(now){
   } else if(running){
     edgePan(dt);
   }
+  // The bed runs whenever the game is on screen, paused or not - silence on
+  // pause is jarring, and a menu over a living valley is not.
+  if(running&&SFX.ctx)
+    SFX.ambience(dt, {water:visWater, battle:Math.min(1,battleHeat)});
   draw();
   if(now-lastMM>80){ lastMM=now; drawMinimap(); }   // the canvas keeps the last frame
   requestAnimationFrame(frame);
@@ -2806,6 +2969,7 @@ function draw(){
   // stripes, which is exactly the grid the baked depth just got rid of.
   {
     const tw=x1-x0+3, th=y1-y0+3;
+    let wet=0, seen=0;
     if(!swell||swell.c.width<tw||swell.c.height<th){
       const c=document.createElement('canvas');
       c.width=Math.max(tw,64); c.height=Math.max(th,64);
@@ -2819,8 +2983,9 @@ function draw(){
       for(let i=0;i<tw;i++){
         const x=x0+i-1;
         const o=(j*tw+i)*4;
+        if(x>=0&&y>=0&&x<MAP_W&&y<MAP_H) seen++;
         if(x<0||y<0||x>=MAP_W||y>=MAP_H||terrain[y*MAP_W+x]!==WATER){ img.data[o+3]=0; continue; }
-        any=true;
+        any=true; wet++;
         const n=SINT[(x*23)&63]*wA + SINT[(y*29+16)&63]*wB + SINT[(x*23+((wave*10)|0))&63]*0.4;
         if(depth[y*MAP_W+x]===1){        // breaking on the shore
           const fo=SINT[(x*11+y*7+((wave*13)|0))&63];
@@ -2830,6 +2995,7 @@ function draw(){
         else   { img.data[o]=10;  img.data[o+1]=32;  img.data[o+2]=54;  img.data[o+3]=Math.min(60,-n*40)|0; }
       }
     }
+    visWater = seen ? wet/seen : 0;
     if(any){
       sg.putImageData(img,0,0);
       ctx.save();

@@ -61,6 +61,11 @@ the empire.
 **Persistence.** Three named save slots plus an autosave, all in `localStorage`,
 with export and import to a JSON file.
 
+**Sound, all of it synthesised.** No audio files: a wind bed that gusts on a
+slow wander, water that rises and falls with how much of it is on screen, bells
+that ring only in quiet, and blades that cut the air. The bed steps back when a
+melee starts and returns when it ends.
+
 **Fog of war**, a live minimap, a chronicle of objectives, and a statistics
 ledger with charts.
 
@@ -83,6 +88,7 @@ npm test
 | `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger |
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
 | `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
+| `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 
 Individual suites: `npm run test:water`, and so on.
 
@@ -107,7 +113,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the six suites
+test/*.test.js         the seven suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block
@@ -140,6 +146,14 @@ beach is drawn the same way, so a diagonal coast stops staircasing.
 **Units walk.** Bodies are baked per type, side and pose: a standing pose, four
 walk frames and an attack lunge, with the stride driven off the same phase as
 the body's bob so feet and torso agree.
+
+**Sound is synthesised, not sampled.** One looping pink-noise buffer feeds both
+the wind and the water through different filters — real wind and real water
+share a spectrum and differ mostly in where the energy sits, so this is both
+cheaper and more convincing than two generators. Transients get their own white
+source: pink noise has almost nothing left up where a blade cutting air lives.
+Every parameter moves by ramp, never by assignment, because a step change in a
+gain or a filter is audible as a click.
 
 **Entity lists are cached.** `bldCache` / `unitCache` / `liveCache` are
 invalidated by `touchLists()` rather than rebuilt per frame, which is what makes
