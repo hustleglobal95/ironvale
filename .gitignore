@@ -1,0 +1,8 @@
+node_modules/
+.tmp/
+*.log
+
+# scratch renders and saves produced by the suites
+*.png
+!docs/*.png
+save-*.json
