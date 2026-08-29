@@ -28,7 +28,11 @@ await page.mouse.move(150,110); await page.mouse.down(); await page.mouse.move(1
 await page.waitForTimeout(300);
 let h=await hud(page);
 ok('drag select picks villagers', /selected/.test(h.sel));
-ok('23 order cards offered', h.cards.length===23);
+// One card per building a villager can raise. It goes up by one whenever the
+// game gains a building, so the number is written here rather than counted from
+// the same table the game builds the cards from — a test that derives its
+// expectation from the code under test asserts nothing.
+ok('24 order cards offered ('+h.cards.length+')', h.cards.length===24);
 
 // --- place a house
 const sited=await place(page,'House');

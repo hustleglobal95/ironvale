@@ -50,7 +50,13 @@ ok('emptying returns them', await page.evaluate(()=>{
   return t.garr.length===0 && window.__IV.ents().filter(e=>e.kind==='unit'&&e.owner===0&&e.type!=='vil').length>=8;}));
 
 // --- repair
-await page.evaluate(()=>{ const t=window.__IV.ents().find(e=>e.type==='tc'&&e.owner===0); t.hp=t.maxHp*0.4; });
+// Marauders reaching the base turn the repair crew into a militia, and then
+// nothing gets mended. This section is about repair, not about the raiders.
+await page.evaluate(()=>{
+  const g=window.__IV, tc=g.ents().find(e=>e.type==='tc'&&e.owner===0);
+  for(const r of g.ents()) if(r.type==='raider'&&Math.hypot(r.x-tc.x,r.y-tc.y)<1600) r.dead=true;
+  tc.hp=tc.maxHp*0.4;
+});
 await page.mouse.move(150,110); await page.mouse.down(); await page.mouse.move(1150,660,{steps:6}); await page.mouse.up();
 await page.waitForTimeout(300);
 await page.evaluate(([x,y])=>window.__IV.go(x,y),[tc.x,tc.y]);   // the drag edge-scrolls; re-centre
@@ -60,8 +66,12 @@ await page.mouse.click(Math.round(tc.x-camR.x), Math.round(tc.y-camR.y), {button
 await page.waitForTimeout(500);
 ok('villagers repair', await page.evaluate(()=>window.__IV.ents().some(e=>e.task==='repair')));
 const hp0=await page.evaluate(()=>window.__IV.ents().find(e=>e.type==='tc'&&e.owner===0).hp);
+const gt0=await page.evaluate(()=>window.__IV.t());
 await page.waitForTimeout(9000);
 const hp1=await page.evaluate(()=>window.__IV.ents().find(e=>e.type==='tc'&&e.owner===0).hp);
+const gt1=await page.evaluate(()=>window.__IV.t());
+if(hp1<=hp0+100) console.log('   (game time moved '+(gt1-gt0).toFixed(1)+'s over 9s of wall; flags '+
+  JSON.stringify(await page.evaluate(()=>window.__IV.flags())) + ')');
 ok('repair restores health ('+Math.round(hp0)+'→'+Math.round(hp1)+')', hp1>hp0+100);
 
 // --- upgrade line
@@ -73,6 +83,13 @@ await page.waitForTimeout(400);
 const br=await page.evaluate(()=>{const x=window.__IV.ents().find(e=>e.type==='barracks'&&e.owner===0);
   window.__IV.go(x.x,x.y); return {x:x.x,y:x.y};});
 await page.waitForTimeout(300);
+// Anything standing on the barracks wins the click, and a marauder that wanders
+// onto it while the suite is aiming takes the whole section down with it. Clear
+// the ones in reach: this is about the upgrade line, not about the raiders.
+await page.evaluate(()=>{
+  const g=window.__IV, b=g.ents().find(e=>e.type==='barracks'&&e.owner===0&&!e.dead);
+  if(b) for(const r of g.ents()) if(r.type==='raider'&&Math.hypot(r.x-b.x,r.y-b.y)<900) r.dead=true;
+});
 const cam2=await page.evaluate(()=>window.__IV.cam());
 // Units win a left-click over the building they are standing on, which is the
 // behaviour we want in play. Try a few points inside the footprint until one
@@ -98,6 +115,11 @@ await page.evaluate(()=>{ const tc=window.__IV.ents().find(e=>e.type==='tc'&&e.o
 await page.waitForTimeout(300);
 const hp2=await page.evaluate(()=>window.__IV.ents().find(e=>e.type==='militia'&&e.owner===0).maxHp);
 await hitKey('Man-at-Arms');
+// The research has to have actually started: a card press that lands on a
+// disabled card, or on a side already researching something, waits 31 seconds
+// and proves nothing.
+const teching=await page.evaluate(()=>window.__IV.sides()[0].teching);
+if(teching!=='manatarms') console.log('   (Man-at-Arms did not start: teching='+teching+')');
 await page.waitForTimeout(31000);
 const hp3=await page.evaluate(()=>window.__IV.ents().find(e=>e.type==='militia'&&e.owner===0).maxHp);
 ok('upgrade buffs units already on the field ('+hp2+'→'+hp3+')', hp3===hp2+20);

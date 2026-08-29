@@ -20,7 +20,16 @@ const WRAPPED = path.join(TMP, 'wrapped.html');
 const HOOK = `
 window.__IV={
   ents:()=>ents, sides:()=>sides, cam:()=>cam, sel:()=>sel, hist:()=>hist,
-  stats:()=>stats, ai:()=>aiState, placing:()=>placing,
+  stats:()=>stats, ai:()=>AI[ENEMY], placing:()=>placing,
+  AI:()=>AI, rel:(a,b)=>rel(a,b), relAll:()=>REL, feed:()=>DISPATCH,
+  houses:()=>({SET:SETTLEMENTS, AIS:AI_SIDES}),
+  envoy:()=>envoy, answer:(y)=>answerEnvoy(y), courts:openCourts,
+  power:(o)=>powerOf(o), foe:(o)=>AI[o]&&AI[o].foe,
+  setRel:(a,b,v)=>setRel(a,b,v), talkNow:(o)=>{ if(AI[o]) AI[o].talk=0; },
+  slot:(o,x,y)=>fieldSlot(o,x,y), slots:(f)=>fieldSlots(f),
+  noteKill:noteKill, offer:(o,k)=>{ envoy=null; offerPlayer(o,k); },
+  send:(o,k)=>playerSend(o,k), canSend:(o,k)=>playerCanSend(o,k),
+  tick:(dt)=>{ for(const o of AI_SIDES) aiUpdate(o,dt); },
   t:()=>gameTime, dims:()=>[MAP_W,MAP_H,WORLD_W,WORLD_H],
   go:centerOn, snap:snapshot, restore:restore, enq:enqueue,
   spawn:makeUnit, mk:makeBuilding,
@@ -34,19 +43,54 @@ window.__IV={
   ghostOk:(sx,sy)=>{
     if(!placing) return false;
     const d=BLD[placing];
-    const tx=Math.floor((sx+cam.x)/TILE-d.w/2+0.5);
-    const ty=Math.floor((sy+cam.y)/TILE-d.h/2+0.5);
+    const {tx,ty}=ghostTile(sx,sy,d);
     const s=sides[PLAYER];
     return tileFree(tx,ty,d.w,d.h,0,placing) &&
            s.w>=d.cost.w && s.g>=d.cost.g && s.f>=d.cost.f;
   },
   plant:plantStandard, flag:()=>standardOf(PLAYER),
+  calm:()=>{ battleHeat=0; },
   sfxObj:()=>SFX, play:(n)=>sfx(n), heat:()=>battleHeat, wet2:()=>visWater,
+  sparksN:()=>sparks.length, puffsN:()=>puffs.length, shake:()=>shake,
+  scarsN:()=>scarred.reduce((n,b)=>n+((b.scars&&b.scars.length)||0),0),
   pick:(sx,sy)=>{ const w=toWorld(sx,sy); const p=pickAt(w.x,w.y);
+    return p?{t:p.type,o:p.owner,k:p.kind,id:p.id}:null; },
+  pickH:(sx,sy)=>{ const p=pickHere(sx,sy);
     return p?{t:p.type,o:p.owner,k:p.kind,id:p.id}:null; },
   spriteCount:()=>Object.keys(SPRITE).length,
   chunks:()=>chunkCache.size,
-  fallen:()=>fallen, spent:()=>spent
+  fallen:()=>fallen, spent:()=>spent,
+  // the three-dimensional view
+  v3:()=>V3, v3on:v3Toggle, orbit:v3Orbit, hAt:heightAt, tw:toWorld,
+  // Where a world point lands on screen, by the same matrix the renderer uses.
+  // Picking is only correct if this and toWorld are inverses of each other.
+  proj:(wx,wz)=>{
+    const C=v3Camera(), y=heightAt(wx,wz), M=C.VP;
+    const w=M[3]*wx+M[7]*y+M[11]*wz+M[15];
+    if(w<=0) return null;
+    const cx=(M[0]*wx+M[4]*y+M[8]*wz+M[12])/w, cy=(M[1]*wx+M[5]*y+M[9]*wz+M[13])/w;
+    return [(cx*0.5+0.5)*innerWidth, (0.5-cy*0.5)*innerHeight];
+  },
+  glErr:()=>{ const g=V3.gl; return g?g.getError():-1; },
+  // berries, birds, and what the villagers work out for themselves
+  bIdx:berryIdx, bName:resName, bRate:resRate, BERRY:()=>BERRY,
+  flocks:()=>flocks, spawnFlock:spawnFlock, birdCall:k=>SFX.birdCall(k),
+  learn:learnFrom, compounds:compoundState, COMPOUND:()=>COMPOUND,
+  panel:()=>updatePanel(),
+  // bake a fresh chunk, bypassing the cache, to time the ground
+  setSpeed:(v)=>{ speed=v; },
+  deposit:deposit, prosperity:prosperity, prosperBuild:prosperBuild, bldCost:bldCost,
+  standing:standingTier, treasuryWorth:treasuryWorth, PROJECT:()=>PROJECT,
+  fund:fund, canFund:canFund, openTreasury:drawTreasury,
+  flags:()=>({running, paused, ended, speed, over:document.getElementById('over').style.display, menu:document.getElementById('menu').style.display, stats:document.getElementById('stats').style.display}),
+  // the year, the fields, the larder
+  setSeason:(i)=>{ gameTime=i*SEASON_LEN+8; tickSeason(); updateHUD(); },
+  season:()=>seasonNow, motes:()=>motes, yearNo:()=>yearNo(),
+  CROP:()=>CROP, sow:sowFarm, growRate:growRate, fertOf:fertOf,
+  farmVariant:farmVariant, bldTrains:(t)=>BLD[t].trains||null,
+  unitOf:(t)=>UNIT[t], place:(t,x,y,bs)=>tryPlace(t,x,y,PLAYER,bs),
+  foodCap:foodCap, foodUse:foodUse, tickB:tickFarm, tickL:tickLarder, draw:()=>draw(),
+  bake:(a,b)=>{ chunkCache.clear(); return groundChunk(a,b); }
 };
 `;
 

@@ -14,8 +14,13 @@ const probe=await page.evaluate(()=>{
 });
 ok('log toasts are click-through ('+probe.pe+', topmost '+probe.top+')', probe.pe==='none'&&probe.top==='CANVAS');
 await page.evaluate(p=>{ const g=window.__IV,c=g.cam();
+  const x=c.x+p[0]+p[2]/2, y=c.y+p[1]+p[3]/2;
+  // Four crowns and a marauder camp means traffic. Anything hostile standing
+  // where the probe is about to stand would be picked instead of him, which
+  // would be the map's fault and not the click's.
+  g.ents().forEach(e=>{ if(e.kind==='unit'&&e.owner!==0&&Math.hypot(e.x-x,e.y-y)<220) e.dead=true; });
   const u=g.ents().find(e=>e.kind==='unit'&&e.owner===0&&e.type==='vil');
-  u.x=c.x+p[0]+p[2]/2; u.y=c.y+p[1]+p[3]/2; u.task='idle'; u.vx=0; u.vy=0;
+  u.x=x; u.y=y; u.task='idle'; u.vx=0; u.vy=0;
   u.target=null; u.resT=null; g.sel().length=0;}, probe.rect);
 await page.waitForTimeout(500);
 // read where he actually settled: the shoreline may have nudged him

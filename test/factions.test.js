@@ -33,14 +33,25 @@ const { chromium, wrap, boot, hud } = require('./harness');
   ok('raiders stay out of the water', await page.evaluate(() =>
     window.__IV.ents().filter(e => e.type === 'raider')
       .every(u => !window.__IV.wet((u.x / 28) | 0, (u.y / 28) | 0))));
+  // Put something in reach rather than waiting for one to wander into range,
+  // so this asserts hostility and not the roll of a patrol route.
+  await page.evaluate(() => {
+    const g = window.__IV, r = g.ents().find(e => e.type === 'raider');
+    if (r) g.spawn(1, 'vil', r.x + 90, r.y + 60);
+  });
   await page.waitForTimeout(3000);
-  ok('raiders go for whoever is nearest', await page.evaluate(() =>
+  ok('raiders go for whoever is nearest, either banner', await page.evaluate(() =>
     window.__IV.ents().filter(e => e.type === 'raider' &&
       (e.task === 'attack' || e.task === 'amove' || e.task === 'move')).length >= 1));
 
   // ---- villager trades
   const ids = await page.evaluate(() => {
     const g = window.__IV, tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    // The raiders above are still on the map and they will happily kill a
+    // villager that is standing next to a berry bush proving a point. Clear the
+    // ones in reach: this section is about the trades, not about the marauders.
+    for (const r of g.ents())
+      if (r.type === 'raider' && Math.hypot(r.x - tc.x, r.y - tc.y) < 1400) r.dead = true;
     const out = {};
     for (const [t, rt] of [['farmer', 'berry'], ['forester', 'tree'], ['miner', 'gold']]) {
       const res = g.ents().filter(e => e.kind === 'res' && e.type === rt)

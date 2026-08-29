@@ -35,11 +35,66 @@ Select, attack-move, patrol, hold ground, garrison, and control groups.
 deliberately leaves him out of a mass selection so he is never swept into a
 charge by accident.
 
-**Two ways to win.** Break their king or their town center — or take the other
-road: train a standard bearer, walk him into their kingdom, plant the colony
+**Two ways to win.** Put down every other crown in the valley — each falls when
+its king and its last town center are gone — or take the other road: train a standard bearer, walk him into their kingdom, plant the colony
 standard and hold it for sixty seconds. Planting it is not a quiet act. They see
 it, they come off their raid clock, and everything they have turns toward the
 flag.
+
+**The year turns.** Four minutes to the year, a minute to the season. Spring is
+pale and full of blossom, summer is the valley at its best, autumn turns the
+broadleaves gold and drops leaves across the field, winter greys the grass,
+strips the trees and snows. It is not a filter over the top: the ground palette
+and every tree are rebaked, and the conifers stay green while everything around
+them turns, because they would.
+
+**Farming.** A farm is a steading: it grows nothing itself, it raises the four
+hands who do, and it takes in what they bring. A field is a separate thing — a
+crop plot a farmer walks out to, breaks and sows. It comes up through sown and
+growing to ripe, is harvested by villagers, then goes back to bare earth and
+sows itself again out of the seed store.
+
+**Four farmers, one crop each.** A ploughman knows wheat, a gardener
+vegetables, a flaxdresser flax, a ryeman rye. A field broken by a hand who knows
+its crop comes up sooner and gives half again as much; a field broken by one who
+doesn't gives less than a field broken by nobody in particular. That choice is
+made once, when the ground is broken, and the field carries it through every
+harvest after — including if you change what it sows.
+
+What a field gives you depends on four things: the crop, the soil, the hand that
+broke it, and the season it ripens in.
+
+- **A field being cut looks like it.** A ripe field is not a block that
+  shrinks: the harvest works down it a row at a time, standing corn giving way
+  to stubble, with sheaves stacked on the ground that has already been taken.
+- **Wheat** is reliable and best in autumn; **vegetables** are quick, modest and
+  kindest to the soil; **flax** is a cash crop that pays a purse of gold at
+  harvest and takes the ground apart; **rye** gives less than wheat in a good
+  year and is the only one of the four worth sowing before a winter.
+- **The soil remembers.** Every harvest costs fertility, and following a crop
+  with the same crop costs half again as much. Rotating pays it back a little,
+  leaving a field fallow pays it back properly, and a field worked to death
+  visibly yields less.
+- **Seed.** Every harvest holds some back; every sowing spends it. Run out and
+  nothing can be sown. In an emergency the granary will let you eat the seed
+  store — it will feed you now and there will be no next harvest from the fields
+  that were waiting on it.
+- **Somewhere to put it.** Food has a ceiling, raised by granaries and the town
+  center. Anything above the ceiling goes bad, slowly, which is a good harvest
+  wasted for want of a shed.
+- **Everyone eats.** A gentle upkeep per head, so stores can run down, a winter
+  can bite, and an empty larder slows every villager until there is food again.
+- **The forecast.** A field tells you what is in it, how far along, what the soil
+  is like, and what it will be worth *in the season it will actually ripen in*.
+  A granary or mill tells you the whole larder: stored against capacity, what is
+  eaten per second and by how many, how long the stores last, what is standing
+  in the fields and what is still growing.
+
+**Four kinds of berry.** Bramble, bilberry, elderberry and gooseberry, each its
+own colour, silhouette and worth: an elder holds 280 food and gives it up
+slowly, a gooseberry holds 120 and gives it up fast. Bushes of a kind grow
+together, so one stretch of the valley really is a better larder than another,
+and it is worth walking a villager past the near patch to reach the right one.
 
 **Villager trades.** Beyond the common villager, a mill raises farmhands, a
 lumber camp raises woodcutters and a mining camp raises prospectors. Each works
@@ -55,11 +110,74 @@ for tends to sit near them.
 sited off the line between the two bases, so there is always a land road between
 them and the water can never cut the map in half.
 
-**University.** Medicine, scholarship and related research that compounds across
-the empire.
+**University.** Seven studies — medicine, scholarship, cartography, architecture,
+husbandry, chemistry, and Natural Philosophy, which is the one that keeps
+working after it is finished. It teaches the settlement to watch what passes
+through its hands, and from then on the villagers work out for themselves which
+elements combine into something worth having: tallow, pitch, salve, leaven,
+alloy and aqua regia, each needing enough of two resources carried home *since
+the study finished*. Nothing is clicked. The university keeps the ledger and you
+watch it fill while you play.
+
+**Birds.** Flocks cross the valley now and then, wingbeats and glides, shadows
+drifting on the ground under them. They call sometimes — on a long uneven
+interval, only when there are birds on screen to have made the sound, and never
+over a fight.
+
+**Tax and prosperity.** The King takes a share of everything carried home — you
+set the rate, and nothing at all is the default answer if you want it. A third
+of what he takes is reserved in the Royal Treasury; the rest is spent on the
+settlement. What comes back is a kingdom that is cheaper and quicker to run:
+five levels of prosperity, each one taking 4% off every building, adding 6% to
+how fast things go up and 3% to how fast the work goes. The level is a record of
+what has been reinvested and it never falls, even when the balance is spent.
+
+Separately, what the kingdom is *holding right now* — food, timber and the worth
+of the reserve — unlocks standing discounts that come and go with your wealth,
+and they land hardest on farming: a field costs 15 timber in a poor country and
+8 in a flourishing one.
+
+The reinvested share buys four public works, permanently: shared tools, an
+irrigation network, a seed bank and public granaries. None of them is paid for
+out of the purse. And the reserve can be opened at any time, which is what a
+reserve is for. The town center shows the whole account: the rate, what has been
+collected, what is reserved, what has been reinvested and what of it is unspent,
+and exactly what the next discount needs.
+
+**Four crowns, and a valley with its own politics.** Ironvale, the Crimson Host,
+Thornhollow and Saltmere all hold towns and all run themselves. They keep books
+on each other: what everyone has done to them, who is strong, who is close, and
+who is already busy at somebody else's border. Out of that they pick a target,
+declare, sue for terms, swear oaths and break them — and every letter that
+passes between them lands in a dispatch feed you can read. Press **J** for the
+Courts: your standing at each border, what every other pair has settled between
+themselves, and the whole correspondence in order.
+
+You are not a spectator at it. Sue for terms with a house at war with you, offer
+an oath to one that isn't, or just send gold; they answer with the same
+arithmetic they use on each other. Their envoys come the other way too — terms
+when a war is going badly for them, an oath when you share an enemy, tribute
+when they think they can ask. An unanswered rider goes home, and going home
+counts as a refusal.
+
+A few rules keep it a valley rather than a firing squad: a crown swears to one
+other crown and no more, it will not put its name to a second war while one is
+running, and nobody piles onto the throat two others are already at. Which means
+Thornhollow and Saltmere can spend the whole game tearing at each other while
+the Crimson Host works on you — and a standard planted in anyone's ground is a
+declaration whether you meant it as one or not.
+
+**They learn how you fight.** Every crown tallies what has been killing its
+people — not what is on the map, only what has walked over its own dead. Kill
+their spearmen with horse and they start raising spears and stop raising horse;
+raze their buildings and they start putting up towers, sooner and more of them.
+Pressure earns pressure: a house you have already bled comes off the raid clock
+early and comes in bigger bands.
 
 **Persistence.** Three named save slots plus an autosave, all in `localStorage`,
-with export and import to a JSON file.
+with export and import to a JSON file. Saves carry the oaths, the dispatches and
+everything each crown has learned; a save from before the neighbours existed
+still opens, and the new crowns get books of their own.
 
 **Sound, all of it synthesised.** No audio files: a wind bed that gusts on a
 slow wander, water that rises and falls with how much of it is on screen, bells
@@ -70,6 +188,14 @@ ends, and separate sliders in the menu set effects and ambience.
 **Blows land somewhere.** A hit on a building throws chips of that building's
 own colour back along the line of the strike, blooms dust, and leaves a scar
 that fades. A ram or a mangonel throws twice as much and shakes the view.
+
+**A three-dimensional view.** Press the backtick key, or the View button in the
+top bar, and the valley stands up: a rolling height field, a low sun that models
+the hills, water with its own surface, and haze that carries the far side of the
+map up into the sky. It is a second renderer over the same game — the ground
+rolls, the rules do not — so you can play in it, or switch back mid-battle
+without losing your place. `[` and `]` swing the camera, PageUp and PageDown
+raise and lower it, the wheel pulls in and out.
 
 **Fog of war**, a live minimap, a chronicle of objectives, and a statistics
 ledger with charts.
@@ -94,6 +220,12 @@ npm test
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
 | `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
 | `effects.test.js` | The volume sliders, the gathering rhythm and its debris, and what a blow does to a wall — chips, dust, a fading scar, and a ram that shakes the view |
+| `crown.test.js` | The tax: that the King's share is split the way it says, that a rate of nothing takes nothing, that prosperity climbs and never falls when the balance is spent, that discounts reach the till and not just the card, that public works come out of the reinvested share and not the purse, that the reserve can be opened, and that the whole account survives a save |
+| `harvest.test.js` | The year and the fields: that the seasons turn and re-dress the world without leaking sprites, that a field goes from broken ground to a harvest, that tending speeds it, that winter and worn-out soil both take their share, that fallow ground recovers, that granaries cap and food above the cap spoils, that everyone eats, that seed runs out, and that all of it survives a save |
+| `valley.test.js` | The four berries and that their yields really differ under a villager, that decorated ground still bakes fast, that birds fly and leave and are not entities, that a call carries over the bed, and that Natural Philosophy discovers its six compounds out of the work and remembers them through a save |
+| `paths.test.js` | Getting there: that a march arrives, that nobody stands still against a coastline, that a target in open water is refused rather than ground at, and that no unit ends with broken arithmetic |
+| `view.test.js` | The 3D view: that it builds, that a click lands on the pixel it was aimed at, that selecting, ordering and building all work through the camera, and that elevation never reaches the simulation |
+| `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, and that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 
 Individual suites: `npm run test:water`, and so on.
@@ -126,6 +258,40 @@ scripts/check-syntax.js  parses the script block
 ```
 
 ## How it is built
+
+**The ground is not empty.** Stones, flowers, tufts, stumps, fallen branches and
+reeds at the waterline are chosen from a hash of the tile and baked into the
+ground chunk, so a chunk evicted from the cache comes back identical and none of
+it costs a frame anything — it is already in the bitmap the ground is drawn
+from. It adds about a tenth of a millisecond to baking a chunk and nothing at
+all to drawing one.
+
+**Buildings are built, not stamped.** Under the plaster: a rubble footing,
+half-timbering with braces in the corners, courses of block, moss at the foot
+and dirty water off the eaves. Windows are openings rather than lit rectangles —
+a stone surround, a sill that stands proud, a mullion, shutters thrown open —
+and only the light inside them is live, each on its own phase so a street does
+not blink in unison. Roofs carry bargeboards down both rakes and a crossed pair
+of timbers in the gable, which is the join that stops the triangle reading as a
+sticker over the box. Towers and castles get battlements instead of a smaller
+roof; the mill's sail turns; every door has a lantern beside it.
+
+**Render scale.** One setting decides how many real pixels the game is drawn
+into — Fast, Balanced or Sharp, in the menu, remembered between sessions. It
+drives the canvas, the baked sprites, the minimap and the generated surface
+grain together. Balanced is the default and matches what a Retina display asks
+for; Sharp is three times the resolution, and it costs frame time and memory
+in proportion.
+
+The ground is the part that changed most. Chunks were baked at one bitmap pixel
+per CSS pixel and then stretched by the device ratio, which is where most of the
+softness in the picture came from — they are baked at the display's real
+resolution now. The generated grain had the same problem and got the same fix,
+by way of a pattern transform, so plaster, thatch, turf and timber are sharp
+rather than smeared. The ground itself stops at two even in Sharp: it is a soft
+organic texture where a third scale buys almost nothing, while the bitmaps it
+has to blit every frame grow with the square of it. Hard edges — trees, walls,
+figures, lettering — go all the way up, and that is where the difference shows.
 
 **Everything is baked.** Trees, berries, gold, buildings, ramparts and unit
 bodies are drawn once into offscreen canvases keyed by type, owner and damage
@@ -161,9 +327,47 @@ source: pink noise has almost nothing left up where a blade cutting air lives.
 Every parameter moves by ramp, never by assignment, because a step change in a
 gain or a filter is audible as a click.
 
+**The 3D view is hand-written WebGL2.** No engine and no library: the file still
+has to run from a `file://` URL with nothing else next to it. A height field is
+generated from the map seed, so the same map always gets the same hills and no
+save has to carry them. The ground is one mesh; the sky is one triangle with its
+view rays worked out on the CPU; every tree, wall, building and figure is one of
+six generated primitives drawn instanced, which keeps the whole scene to a
+handful of draw calls. Water is a separate sheet with waves along five
+directions that share no axis — axis-aligned sines interfere into a plaid, which
+is the one pattern the eye will not accept as water.
+
+**Elevation is cosmetic, and enforced as such.** Pathfinding, placement, ranges,
+vision and combat all assume a flat tile grid, and the 3D view is not allowed to
+change that. What that costs is a picking problem: the game's mouse handling
+funnels through one function, `toWorld()`, which in 3D walks the click ray down
+onto the height field, so orders land on the ground you are pointing at. Figures
+are picked separately, in screen space, because a ground ray at a shallow angle
+is accurate to about a tile and a villager is smaller than that.
+
+**There is no pathfinder.** Units steer: they walk at the target and treat what
+they hit as a wall to follow. Buildings give a clean face to slide along.
+Coastlines do not — a shore is a ragged diagonal, and a normal taken from two
+axis probes points into the water about as often as along it — so terrain gets
+its own steering, fanning out from the heading the unit wants and taking the
+first opening that is genuinely walkable. Which side it turns is then held on to
+until that side stops leading anywhere, because a unit that re-decides every
+frame steps left, steps right, and covers no ground at all.
+
 **Entity lists are cached.** `bldCache` / `unitCache` / `liveCache` are
 invalidated by `touchLists()` rather than rebuilt per frame, which is what makes
 a 148×148 map viable.
+
+### Known flaky assertions
+
+Two of the click-reliability assertions fail about one run in four, and both are
+the same thing: marauder raiders wander across the map while the suite is
+clicking on a probe unit, and a hostile figure standing on top of the probe wins
+the pick. The game is behaving correctly — a raider is not yours to select — but
+the test cannot control where the raiders walk. The mixer assertion in
+`effects.test.js` fails occasionally for an unrelated reason: headless Chromium
+sometimes never applies a scheduled parameter change under its null audio sink,
+so the slider moves and the bus does not.
 
 ### Why the file has no `<html>` tag
 

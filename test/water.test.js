@@ -44,7 +44,7 @@ ok('a dock is accepted on the shore', placed.onShore);
 await page.evaluate(()=>{ const d=window.__IV.ents().find(e=>e.type==='dock'&&e.owner===0);
   d.building=false; d.hp=d.maxHp; d.prog=d.buildTime; window.__IV.go(d.x,d.y); });
 await page.waitForTimeout(300);
-const before=await page.evaluate(()=>Math.round(window.__IV.sides()[0].f));
+const before=await page.evaluate(()=>Math.round(window.__IV.stats().gath.f));
 await page.evaluate(()=>{ const d=window.__IV.ents().find(e=>e.type==='dock'&&e.owner===0);
   for(let i=0;i<3;i++) window.__IV.enq(d,'fisher'); });
 // Build time scales with how far the dock landed from the base, so wait for the
@@ -58,9 +58,12 @@ for(let i=0;i<30;i++){
 ok('the dock launches fishing boats ('+boats+')', boats>=1);
 await page.screenshot({path:require('path').join(__dirname,'..','.tmp','w_dock.png')});
 await page.waitForTimeout(45000);
-const after=await page.evaluate(()=>Math.round(window.__IV.sides()[0].f));
+// Measure what was landed, not what is in the purse. The purse also pays for
+// everything the settlement eats and loses whatever it cannot store, so a boat
+// can fish all day and leave the number lower than it found it.
+const after=await page.evaluate(()=>Math.round(window.__IV.stats().gath.f));
 const onFish=await page.evaluate(()=>window.__IV.ents().filter(e=>e.type==='fisher'&&e.task==='gather').length);
-ok('boats fish and land the catch ('+before+' -> '+after+' food, '+onFish+' working)', after>before);
+ok('boats fish and land the catch ('+before+' -> '+after+' landed, '+onFish+' working)', after>before);
 
 // --- the waterline holds both ways
 const land=await page.evaluate(()=>{

@@ -68,9 +68,16 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and falls away inland (' + dryGain.toFixed(3) + ')', dryGain < wetGain * 0.5);
 
   // A blade is broadband and bright: it must show up where the bed is not.
+  // sfx() throttles a named sound to one every 90ms, so a single call made while
+  // somebody is actually fighting can be swallowed and the test then measures
+  // the bed on its own. Strike a few times, spaced past the throttle.
   const slashHigh = await page.evaluate(async () => {
-    window.__IV.play('slash');
-    return window.__peakBand(1800, 4000, 260);
+    let p = 0;
+    for (let i = 0; i < 4; i++) {
+      window.__IV.play('slash');
+      p = Math.max(p, await window.__peakBand(1800, 4000, 200));
+    }
+    return p;
   });
   console.log('   high band: bed ' + bedHigh + ' -> slash ' + slashHigh);
   ok('a sword stroke cuts through the bed', slashHigh > bedHigh + 25);
