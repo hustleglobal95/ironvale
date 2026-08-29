@@ -27,6 +27,7 @@ window.__IV={
   power:(o)=>powerOf(o), foe:(o)=>AI[o]&&AI[o].foe,
   setRel:(a,b,v)=>setRel(a,b,v), talkNow:(o)=>{ if(AI[o]) AI[o].talk=0; },
   usprite:(t,o,p,d)=>unitSprite(t,o,p,d), ugeom:(t)=>unitGeom(t),
+  bsprite:(t,o,tr,v)=>bldSprite(t,o,tr,v), bpad:(t)=>bldPad(t),
   slot:(o,x,y)=>fieldSlot(o,x,y), touch:()=>{ touchLists(); rebuildOcc(); }, variant:(b)=>farmVariant(b), lay:(f)=>layBlock(f), slots:(f)=>fieldSlots(f),
   noteKill:noteKill, offer:(o,k)=>{ envoy=null; offerPlayer(o,k); },
   send:(o,k)=>playerSend(o,k), canSend:(o,k)=>playerCanSend(o,k),

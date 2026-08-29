@@ -94,13 +94,28 @@ await page.evaluate(()=>{ const g=window.__IV;
   alive.forEach(u=>{ u.hp=u.maxHp; });
   g.touch();
   // hold the archers still and put them together, then double-click one
+  // Put the group somewhere the camera can actually centre on. The step above
+  // marched them at the far corner of the valley; there clampCam pins the view,
+  // the archer lands under the top bar, and the click goes to the HUD instead
+  // of the map. That is a fact about the map edge, not about double-clicking.
   const a=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead);
+  a.forEach((u,i)=>{ u.x=k.x+60+(i%3)*36; u.y=k.y+60+Math.floor(i/3)*36;
+                     u.task='idle'; u.target=null; u.am=null; u.vx=0; u.vy=0; });
   const c=a[0];
-  a.forEach((u,i)=>{ u.x=c.x+(i%3)*26; u.y=c.y+Math.floor(i/3)*26; u.task='idle'; u.target=null; u.am=null; });
-  g.go(c.x,c.y); g.sel().length=0; });
+  g.go(c.x,c.y); g.sel().length=0;
+  // Pin which archer the click is aimed at. `find` without a dead check can
+  // pick a corpse that has not been swept yet, and clicking where a dead man
+  // used to be selects nothing at all - which is what made this read as a
+  // double-click failure rather than as the test aiming at the wrong place.
+  window.__DBL=c.id; });
 await page.waitForTimeout(500);
 const sp=await page.evaluate(()=>{
-  const g=window.__IV, c=g.cam(), u=g.ents().find(e=>e.type==='archer'&&e.owner===0);
+  // Freeze them again on the frame the position is read. In half a second of
+  // real time an idle archer can be shoved by a neighbour or pick up a target,
+  // and then the click lands on the grass beside him and selects nothing.
+  const g=window.__IV, c=g.cam(), u=g.ents().find(e=>e.id===window.__DBL);
+  g.ents().forEach(e=>{ if(e.type==='archer'&&e.owner===0&&!e.dead){
+    e.task='idle'; e.target=null; e.am=null; e.vx=0; e.vy=0; } });
   return [Math.round(u.x-c.x), Math.round(u.y-c.y)];});
 await page.mouse.click(sp[0],sp[1]); await page.waitForTimeout(120);
 await page.mouse.click(sp[0],sp[1]); await page.waitForTimeout(300);
