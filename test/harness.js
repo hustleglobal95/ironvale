@@ -26,6 +26,7 @@ window.__IV={
   envoy:()=>envoy, answer:(y)=>answerEnvoy(y), courts:openCourts,
   power:(o)=>powerOf(o), foe:(o)=>AI[o]&&AI[o].foe,
   setRel:(a,b,v)=>setRel(a,b,v), talkNow:(o)=>{ if(AI[o]) AI[o].talk=0; },
+  sprMem:()=>{ let n=0,b=0,tn=0,tb=0; for(const k in SPRITE){ const c=SPRITE[k].c; const z=c.width*c.height*4; n++; b+=z; if(k.slice(0,4)==='tree'){tn++;tb+=z;} } return {n,mb:+(b/1048576).toFixed(1),tn,tmb:+(tb/1048576).toFixed(1),dpr:SPR_DPR}; },
   pace:()=>PACE, crops:()=>CROP, gap:(n)=>waveGap(n), diff:()=>DIFF,
   units:()=>UNIT, ages:()=>AGES, prod:(b,dt)=>tickProduction(b,dt),
   marauders:(dt)=>tickMarauders(dt), setTime:(v)=>{ gameTime=v; },

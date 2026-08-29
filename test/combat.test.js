@@ -89,8 +89,6 @@ await page.evaluate(()=>{ const g=window.__IV;
   let have=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead).length;
   while(have<6){ g.spawn(0,'archer',k.x+40,k.y+40); have++; }
   const alive=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead);
-  const c0=alive[0];
-  g.ents().forEach(e=>{ if(e.kind==='unit'&&e.owner!==0&&Math.hypot(e.x-c0.x,e.y-c0.y)<260) e.dead=true; });
   alive.forEach(u=>{ u.hp=u.maxHp; });
   g.touch();
   // hold the archers still and put them together, then double-click one
@@ -102,12 +100,26 @@ await page.evaluate(()=>{ const g=window.__IV;
   a.forEach((u,i)=>{ u.x=k.x+60+(i%3)*36; u.y=k.y+60+Math.floor(i/3)*36;
                      u.task='idle'; u.target=null; u.am=null; u.vx=0; u.vy=0; });
   const c=a[0];
+  // Clear what is standing over them AFTER they have been moved, not before.
+  // A raider on top of the probe wins the pick and a click on a raider selects
+  // nothing at all - which is the whole of this assertion's history of failing
+  // one run in four, and it was being cleared around where the archers used to
+  // be rather than around where they now are.
+  g.ents().forEach(e=>{ if(e.kind==='unit'&&e.owner!==0&&Math.hypot(e.x-c.x,e.y-c.y)<300) e.dead=true; });
+  g.touch();
   g.go(c.x,c.y); g.sel().length=0;
   // Pin which archer the click is aimed at. `find` without a dead check can
   // pick a corpse that has not been swept yet, and clicking where a dead man
   // used to be selects nothing at all - which is what made this read as a
   // double-click failure rather than as the test aiming at the wrong place.
   window.__DBL=c.id; });
+// Park the pointer in the middle of the map first. The minimap click a few
+// steps up leaves it in the bottom-left corner, which is an edge-pan zone: the
+// camera keeps scrolling between the moment the screen position is read and the
+// moment the click lands, and the click goes to whatever has scrolled under it.
+// That is what makes this assertion flaky, and it is nothing to do with
+// double-clicking.
+await page.mouse.move(700,450);
 await page.waitForTimeout(500);
 const sp=await page.evaluate(()=>{
   // Freeze them again on the frame the position is read. In half a second of

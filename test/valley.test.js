@@ -208,6 +208,28 @@ const { chromium, wrap, boot } = require('./harness');
   });
   ok('a save remembers what the settlement worked out', round.found === 6 && round.learn && round.phil === 1);
 
+  // ---- the wood moves, and the moving costs nothing ---------------------
+  // A tree sways. It has to, or a valley is a photograph. What it must not do
+  // is pay for the sway: a sheared blit is resampled every frame and a baked
+  // lean multiplies the tree cache by however many leans it keeps - seven of
+  // them took this from 128 sprites to 781. Both were built and measured; the
+  // one that shipped offsets the whole sprite by a couple of pixels and costs
+  // nothing. This holds that down.
+  const wood = await page.evaluate(() => new Promise(res => {
+    const g = window.__IV;
+    g.reveal();
+    const t = g.ents().filter(e => e.type === 'tree' && !e.dead);
+    const cam = g.cam();
+    let k = 0;
+    for (const e of t) { if (k >= 120) break; e.x = cam.x + 40 + (k % 12) * 60; e.y = cam.y + 60 + ((k / 12) | 0) * 48; k++; }
+    g.touch();
+    // let the wind wander a while, so every lean a tree can take is visited
+    setTimeout(() => res({ n: k, mem: g.sprMem() }), 5000);
+  }));
+  ok('a wood of ' + wood.n + ' keeps its sprite cache small (' + wood.mem.tn +
+     ' tree sprites, ' + wood.mem.tmb + 'MB)',
+     wood.mem.tn <= 200 && wood.mem.tmb < 4);
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
