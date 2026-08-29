@@ -62,7 +62,6 @@
      colours carry the meaning, which is what keeps the right-hand buttons on
      screen on a laptop. */
   @media (max-width:1620px){ .res .k{display:none} .res{padding:0 11px} #ledger .crest{padding:0 13px} }
-  @media (max-width:1300px){ #ageChip{display:none} }
   .res .n{
     font-family:"Barlow Condensed",system-ui,sans-serif; font-weight:600; font-size:21px;
     font-variant-numeric:tabular-nums; color:var(--parch); letter-spacing:.02em; line-height:1;
@@ -122,6 +121,14 @@
   #seasonChip{display:flex; flex-direction:column; justify-content:center; gap:3px;
     padding:0 13px; min-width:78px; border-right:1px solid rgba(120,102,68,.28)}
   #seasonName{font-family:"Cinzel",serif; font-size:11px; letter-spacing:.06em; color:#B9AE8C}
+  #watchChip{display:flex; flex-direction:column; justify-content:center; gap:3px;
+    padding:0 11px; min-width:84px; border-right:1px solid rgba(120,102,68,.28); cursor:default}
+  #watchName{font-family:"Cinzel",serif; font-size:11px; letter-spacing:.06em; color:#9FB27A;
+    white-space:nowrap}
+  #watchBar{height:3px; background:rgba(60,52,36,.7); border-radius:2px; overflow:hidden}
+  #watchBar i{display:block; height:100%; width:0; background:#7E9B54; transition:width .3s linear}
+  #watchChip.warn #watchName{color:#D8B071} #watchChip.warn #watchBar i{background:#C08A34}
+  #watchChip.bad  #watchName{color:#E8726A} #watchChip.bad  #watchBar i{background:#C2453D}
   #seasonBar{height:3px; background:rgba(60,52,36,.7); border-radius:2px; overflow:hidden}
   #seasonBar i{display:block; height:100%; width:0; background:#8FA36A; transition:width .25s linear}
   #crownChip{display:flex; flex-direction:column; justify-content:center; gap:3px;
@@ -129,6 +136,17 @@
   #crownName{font-family:"Cinzel",serif; font-size:11px; letter-spacing:.06em; color:#D6BE7E}
   #crownBar{height:3px; background:rgba(60,52,36,.7); border-radius:2px; overflow:hidden}
   #crownBar i{display:block; height:100%; width:0; background:#D3A23C; transition:width .3s linear}
+  /* These have to sit AFTER the rules they override. They did not, so at equal
+     specificity the plain rule further down the sheet won and the chip that was
+     supposed to drop off a narrow bar never dropped off it - which is how the
+     menu button ended up past the right edge on a laptop.
+     The watch is time-critical and the age is not (the age is on the town
+     centre's own panel too), so the age chip goes first. */
+  @media (max-width:1560px){ #ageChip{display:none} }
+  @media (max-width:1400px){ .res{padding:0 8px} #ledger .crest{padding:0 10px}
+                             #seasonChip,#watchChip,#crownChip{padding:0 9px} }
+  @media (max-width:1240px){ #watchChip{display:none} }
+  @media (max-width:1120px){ #crownChip{display:none} }
   body.win #seasonName{color:#CBD6DC} body.win #seasonBar i{background:#A9C0CC}
   body.aut #seasonName{color:#D8B071} body.aut #seasonBar i{background:#C08A34}
   body.spr #seasonName{color:#C7D9A8} body.spr #seasonBar i{background:#9CC46E}
@@ -536,7 +554,8 @@
   <div class="res" title="Seed held back from harvests. Sowing a field costs seed."><span class="glyph" style="background:#C9B26A"></span><span class="n" id="rSeed">0</span><span class="k">Seed</span></div>
   <div class="res"><span class="glyph" style="background:#4B84BE"></span><span class="n" id="rPop">0/0</span><span class="k">Pop</span></div>
   <div id="ageChip"><div id="ageName">Dark Age</div><div id="ageBar"><i></i></div></div>
-  <div id="seasonChip" title="The year turns every four minutes"><div id="seasonName">Summer</div><div id="seasonBar"><i></i></div></div>
+  <div id="seasonChip" title="The year turns every eight minutes"><div id="seasonName">Summer</div><div id="seasonBar"><i></i></div></div>
+  <div id="watchChip" title="What is standing between you and the valley"><div id="watchName">Quiet</div><div id="watchBar"><i></i></div></div>
   <div id="crownChip" title="The Royal Treasury and the state of the kingdom"><div id="crownName">Poor</div><div id="crownBar"><i></i></div></div>
   <button class="lbtn" id="idleBtn" title="Select the next idle villager (period key)">Idle <b id="idleN">0</b></button>
   <button class="lbtn" id="kingBtn" title="Your king — click to find him (K)">King <b id="kingHp">—</b></button>
@@ -810,43 +829,43 @@ const UNIT={
             cost:{f:0,w:0,g:0}, time:0, bonus:{}, unique:true, regen:6, aura:170,
             desc:'One to a settlement. He fights like ten men and steadies everyone near him — and if he falls, so does your banner.'},
   bearer:  {name:'Standard Bearer', cls:'inf', age:1, hp:190, atk:0, armor:4, range:0, cd:9, speed:52, r:10, sight:9,
-            cost:{f:0,w:0,g:180}, time:26, bonus:{}, unique:true, noAtk:true,
+            cost:{f:0,w:0,g:180}, time:20, bonus:{}, unique:true, noAtk:true,
             desc:'Carries your colony standard. He cannot fight. Walk him into their kingdom, plant the standard, and hold it for a minute to take the valley without ever reaching their keep.'},
   raider:  {name:'Marauder', cls:'inf', age:0, hp:68, atk:8, armor:1, range:22, cd:1.05, speed:66, r:9, sight:8,
             cost:{f:0,w:0,g:0}, time:0, bonus:{}, free:true,
             desc:'Owes nothing to either banner and raids both.'},
   militia: {name:'Militia',   cls:'inf',  age:0, hp:75,  atk:9,  armor:1, range:22,  cd:1.0, speed:62, r:9,  sight:7,
-            cost:{f:60,w:0,g:20},   time:13, bonus:{siege:2},
+            cost:{f:60,w:0,g:20},   time:6, bonus:{siege:2},
             desc:'Line infantry. Cheap, sturdy, good against siege engines.'},
   spear:   {name:'Spearman',  cls:'inf',  age:0, hp:60,  atk:6,  armor:0, range:24,  cd:1.1, speed:62, r:9,  sight:7,
-            cost:{f:35,w:25,g:0},   time:11, bonus:{cav:3,siege:2},
+            cost:{f:35,w:25,g:0},   time:5, bonus:{cav:3,siege:2},
             desc:'Braces against horses. Three times the damage to cavalry.'},
   archer:  {name:'Archer',    cls:'arch', age:1, hp:42,  atk:7,  armor:0, range:150, cd:1.3, speed:58, r:8,  sight:9,
-            cost:{f:40,w:40,g:0},   time:14, bonus:{},
+            cost:{f:40,w:40,g:0},   time:7, bonus:{},
             desc:'Outranges everything on foot. Fragile once it is caught.'},
   skirm:   {name:'Skirmisher',cls:'arch', age:1, hp:56,  atk:5,  armor:2, range:120, cd:1.4, speed:58, r:8,  sight:8,
-            cost:{f:25,w:35,g:0},   time:12, bonus:{arch:3},
+            cost:{f:25,w:35,g:0},   time:6, bonus:{arch:3},
             desc:'Javelins and a shield. Built to shut down enemy archers.'},
   scout:   {name:'Scout',     cls:'cav',  age:1, hp:70,  atk:6,  armor:0, range:22,  cd:1.2, speed:106,r:9,  sight:13,
-            cost:{f:80,w:0,g:0},    time:12, bonus:{arch:2},
+            cost:{f:80,w:0,g:0},    time:7, bonus:{arch:2},
             desc:'Fast eyes. Lifts the fog and runs down loose archers.'},
   knight:  {name:'Knight',    cls:'cav',  age:2, hp:130, atk:14, armor:2, range:24,  cd:1.0, speed:88, r:10, sight:8,
-            cost:{f:60,w:0,g:75},   time:17, bonus:{vil:1.5},
+            cost:{f:60,w:0,g:75},   time:11, bonus:{vil:1.5},
             desc:'Heavy horse. The hammer of the Castle Age, and spear-bait.'},
   ram:     {name:'Ram',       cls:'siege',age:2, hp:280, atk:14, armor:4, range:26,  cd:2.4, speed:42, r:12, sight:6,
-            cost:{f:0,w:160,g:75},  time:20, bonus:{bld:9},
+            cost:{f:0,w:160,g:75},  time:15, bonus:{bld:9},
             desc:'Walks up to walls and takes them down. Helpless against troops.'},
   fisher:  {name:'Fishing Boat', cls:'ship', age:0, hp:90, atk:0, armor:1, range:0, cd:1, speed:74, r:11, sight:8,
-            cost:{f:0,w:75,g:0}, time:11, bonus:{}, water:true, gather:true,
+            cost:{f:0,w:75,g:0}, time:9, bonus:{}, water:true, gather:true,
             desc:'Works the shoals and lands its catch at a dock. Food that no raider can burn.'},
   galley:  {name:'War Galley', cls:'ship', age:1, hp:190, atk:11, armor:3, range:170, cd:1.5, speed:80, r:12, sight:11,
-            cost:{f:0,w:90,g:35}, time:18, bonus:{bld:1.5}, water:true,
+            cost:{f:0,w:90,g:35}, time:12, bonus:{bld:1.5}, water:true,
             desc:'Rules the water and shells anything foolish enough to camp the shore.'},
   mango:   {name:'Mangonel', cls:'siege',age:2, hp:150, atk:26, armor:2, range:210, cd:3.4, speed:40, r:12, sight:9,
-            cost:{f:0,w:160,g:135}, time:24, bonus:{bld:2}, splash:44,
+            cost:{f:0,w:160,g:135}, time:18, bonus:{bld:2}, splash:44,
             desc:'Lobs stone into a crowd. Hits everything near where it lands — yours included.'},
   paladin: {name:'Paladin',   cls:'cav',  age:3, hp:190, atk:19, armor:3, range:24,  cd:1.0, speed:92, r:11, sight:9,
-            cost:{f:90,w:0,g:130},  time:22, bonus:{vil:1.5,arch:1.5},
+            cost:{f:90,w:0,g:130},  time:14, bonus:{vil:1.5,arch:1.5},
             desc:'The Imperial charge. Expensive, and worth it.'}
 };
 
@@ -1100,6 +1119,24 @@ const COMPOUND=[
 // reliable, one quick and kind to the soil, one that pays in coin and takes the
 // ground apart. Season multipliers are on the growing, so what you sow in
 // autumn matters as much as what you sow.
+/* ------------------------------ pacing --------------------------------------
+   Every number that decides how fast a match moves lives here, and nothing
+   else keeps a second copy of one. The shape it is tuned to is: raise the
+   settlement, get an economy running, unlock the mechanics that make it work,
+   put a wall and a garrison up, and only then meet a war band. What was wrong
+   was not that the enemy was too strong - it was that the clock did not leave
+   room to do any of that before it arrived.                                 */
+const PACE={
+  year: 480,          // seconds to the year; a season is a quarter of it
+  crop: 1.35,         // how much of a season one crop takes up
+  firstWave: 1.55,    // how much longer than before until the first war band
+  waveGap0: 96,       // seconds between the first war bands
+  waveGapStep: 13,    // and how much shorter each one after that
+  waveGapMin: 30,     // never further apart than this once it is a real war
+  raidStart: 165,     // no stockade lets a raider out before this
+  raidGap: [40,28],   // and then one every 40 to 68 seconds
+  musterWarn: 0.72    // warn when a crown has this much of a war band standing
+};
 const CROP=[
   {id:'wheat', name:'Wheat', time:46, yield:520, gold:0, seed:12, back:0.11, drain:0.18,
    season:[1.00,1.15,1.25,0.22], ear:'#D8B65C', stalk:'#B79A46',
@@ -1114,6 +1151,19 @@ const CROP=[
    season:[0.86,0.82,1.05,0.95], ear:'#B9A882', stalk:'#8C9A6A',
    desc:'Hardy and slow. It gives less than wheat in a good year and it is the only thing worth sowing before a winter.'}
 ];
+// A season twice as long with the same crops in it is the same farm running
+// twice as often, which is not what a longer season is for. Time, yield, seed
+// and the fertility it costs all scale together, so a harvest is a season's
+// work and the ground, the seed store and the larder all balance exactly where
+// they did. What is NOT scaled is `back` and `season`: those are ratios, and a
+// ratio does not have a length.
+for(const c of CROP){
+  c.time  = Math.round(c.time  * PACE.crop);
+  c.yield = Math.round(c.yield * PACE.crop);
+  c.gold  = Math.round(c.gold  * PACE.crop);
+  c.seed  = Math.round(c.seed  * PACE.crop);
+  c.drain = +(c.drain * PACE.crop).toFixed(3);
+}
 const CROP_IDX={wheat:0, veg:1, flax:2, rye:3};
 // Four hands, one crop each. A specialist on their own crop is worth having;
 // on somebody else's they are worse than a common villager would be, which is
@@ -1124,11 +1174,21 @@ const STAGE=['Fallow','Sown','Growing','Ripe'];
 const RES_LABEL={f:'Food', w:'Wood', g:'Gold'};
 const CLS_LABEL={vil:'villagers', inf:'infantry', arch:'archers', cav:'cavalry', siege:'siege', ship:'ships', king:'kings', bld:'buildings'};
 
+// firstAttack is in seconds and is scaled by PACE.firstWave, so the whole
+// ladder moves together and none of the three difficulties has to be re-tuned
+// by hand when the pacing changes.
 const DIFF={
   easy:   {label:'Reeve',        gather:0.85, vilTarget:14, firstAttack:270, wave:4, waveStep:2, waveCap:14, ageDelay:1.35, tech:0.5},
   normal: {label:'Marcher Lord', gather:1.00, vilTarget:19, firstAttack:195, wave:5, waveStep:2, waveCap:22, ageDelay:1.00, tech:1},
   hard:   {label:'Warlord',      gather:1.25, vilTarget:25, firstAttack:145, wave:5, waveStep:3, waveCap:30, ageDelay:0.78, tech:1}
 };
+for(const k in DIFF) DIFF[k].firstAttack=Math.round(DIFF[k].firstAttack*PACE.firstWave);
+// How long a crown waits between war bands. The first few are far apart, and
+// they close up as the war goes on: pressure should escalate, not arrive at
+// full strength on a metronome from the first minute.
+function waveGap(n){
+  return Math.max(PACE.waveGapMin, PACE.waveGap0 - n*PACE.waveGapStep);
+}
 
 /* ------------------------ objectives ------------------------ */
 const OBJECTIVES=[
@@ -1486,7 +1546,7 @@ function newSide(o){
           // what has been carried home since Natural Philosophy finished, and
           // what has been worked out from it
           learn:{f:0,w:0,g:0}, found:Object.create(null),
-          seed:60, nextCrop:0, spoiled:0,
+          seed:Math.round(60*PACE.crop), nextCrop:0, spoiled:0,
           taxRate:0.10, treasury:{f:0,w:0,g:0}, works:0, pool:0, taken:{f:0,w:0,g:0},
           projects:Object.create(null)};
 }
@@ -1785,6 +1845,15 @@ function cluster(type,cx,cy,rad,n){
   }
 }
 
+// A hall that raises soldiers points them at the ground in front of its own
+// door. Men scattering round the walls the moment they are trained is not a
+// muster, and every player fixes it by hand on the first day. It is set the
+// moment the hall is finished, however it got finished - by a builder, by the
+// map generator, or by an AI dropping one in whole.
+function musterPoint(b){
+  if(b.rally || !BLD[b.type].trains || b.type==='tc') return;
+  b.rally={x:b.x, y:b.y+b.h*TILE*0.5+TILE*1.2};
+}
 function makeBuilding(o,type,tx,ty,done){
   const d=BLD[type], mx=Math.round(d.hp*sides[o].mod.bldHp);
   const e={id:nextId++, kind:'bld', type, owner:o, tx, ty, w:d.w, h:d.h,
@@ -1793,6 +1862,7 @@ function makeBuilding(o,type,tx,ty,done){
     building:!done, prog:done?d.build:0, buildTime:d.build,
     queue:[], qt:0, cd:0, r:Math.max(d.w,d.h)*TILE*0.5,
     amount:0, max:Math.round((d.farm||0)*sides[o].mod.farmYield), rally:null, seen:false, garr:[]};
+  if(done) musterPoint(e);
   if(type==='plot'){
     // Broken ground, not a standing crop. It is sown the moment the farmer who
     // broke it finishes, and re-sown out of the seed store after every harvest.
@@ -2213,6 +2283,17 @@ function tickProduction(b,dt){
       const a=rnd()*6.283;
       sx=b.x+Math.cos(a)*(b.w*TILE*0.65); sy=b.y+Math.sin(a)*(b.h*TILE*0.65);
     }
+    // Standing orders. A barracks set to keep going re-queues what it just
+    // finished as long as the food, the population and the age allow it - and
+    // stops of its own accord the moment one of them does not, because
+    // `enqueue` is the same gate the button goes through. There is no way for
+    // this to spend what a settlement does not have.
+    if(b.rep && b.queue.length===0){
+      if(!enqueue(b,type) && b.owner===PLAYER && !b.repWarn){
+        b.repWarn=1;
+        log(BLD[b.type].name+' has stopped: nothing left to raise '+unitName(PLAYER,type)+' with.');
+      } else if(b.queue.length) b.repWarn=0;
+    }
     const u=makeUnit(b.owner,type, sx, sy);
     if(b.owner===PLAYER){ stats.trained++; if(UNIT[type].cls!=='vil') stats.soldiers++; else if(UNIT[type].trade) stats.tradesmen=(stats.tradesmen||0)+1; sfx('done'); }
     if(b.rally) orderMove(u,b.rally.x,b.rally.y);
@@ -2237,7 +2318,11 @@ function startAge(o){
   if(!canPay(o,cost)) return false;
   pay(o,cost);
   s.agingTo=nxt;
-  s.aging=AGES[nxt].time*(o===ENEMY?DIFF[difficulty].ageDelay:1);
+  // The difficulty's age modifier belongs to every crown that is not you.
+  // Applying it to the Crimson Host alone left Thornhollow and Saltmere ageing
+  // at the player's rate, which on Reeve made them the faster of the three and
+  // on Warlord the slower - an accident, either way.
+  s.aging=AGES[nxt].time*(o!==PLAYER?DIFF[difficulty].ageDelay:1);
   s.agingFull=s.aging;
   if(o===PLAYER){ log('Advancing to the '+AGES[nxt].name+'.'); sfx('order'); }
   return true;
@@ -2279,10 +2364,13 @@ function tickMarauders(dt){
   for(const u of unitCache) if(!u.dead&&u.owner===MARAUDER) band.push(u);
   if(!camps.length) return;
 
+  // Nothing comes out of a stockade in the first minutes. A raider walking into
+  // a two-villager camp is not pressure, it is a coin flip on the whole match.
+  if(gameTime<PACE.raidStart) return;
   for(const c of camps){
     c.spawnT=(c.spawnT||0)-dt;
     if(c.spawnT>0) continue;
-    c.spawnT=34+rnd()*26;
+    c.spawnT=PACE.raidGap[0]+rnd()*PACE.raidGap[1];
     const mine=band.filter(u=>Math.hypot(u.x-c.x,u.y-c.y)<RAID_RANGE).length;
     if(mine>=RAID_CAP) continue;
     const a=rnd()*6.283;
@@ -2633,6 +2721,7 @@ function updateUnit(u,dt){
         b.hp=Math.min(b.maxHp, b.maxHp*(0.08+0.92*(b.prog/b.buildTime)));
         if(b.prog>=b.buildTime){
           b.building=false; b.hp=b.maxHp;
+          musterPoint(b);
           if(b.type==='plot'){
             // Breaking the ground was the work. Whoever did it decides how well
             // the field does: a specialist on their own crop, a specialist on
@@ -4089,14 +4178,35 @@ function aiUpdate(o,dt){
   // War bands only march where a war has been declared. Everything short of
   // that is posture, and posture does not burn anybody's fields.
   const ready=atWar(o,FOE) && gameTime>D.firstAttack-Math.min(90, bled*2.5);
-  const gap=flag?12:(28-Math.min(12,bled*0.3));
+  const gap=flag?12:Math.max(PACE.waveGapMin, waveGap(A.wave)-Math.min(20,bled*0.3));
+  // A war band forming up is something a settlement can see coming, and being
+  // told once - before it moves, not as it arrives - is the difference between
+  // a raid you prepared for and a raid you were ambushed by.
+  if(FOE===PLAYER && ready && !A.attacking &&
+     army.length>=A.waveSize*PACE.musterWarn && army.length<A.waveSize &&
+     gameTime-(A.warned||-999)>40){
+    A.warned=gameTime;
+    log(houseName(o)+' is mustering — '+army.length+' under arms and rising.', true);
+    sfx('alert');
+  }
   if(ready && !A.attacking && army.length>=A.waveSize && gameTime-A.lastAttack>gap){
     A.attacking=true; A.lastAttack=gameTime; A.wave++;
     const targets=ents.filter(e=>!e.dead&&e.owner===FOE);
     if(targets.length){
       // rams go for buildings, everything else for whatever is nearest
       const pk=kingOf(FOE);
-      for(const u of army){
+      // A crown sends a war band, not everything it owns. It commits about the
+      // size of band it decided on and keeps the rest at home - which is what
+      // makes the escalation legible: the bands get bigger because waveSize
+      // gets bigger, not because the gap between them let a whole army pile up.
+      // Without this, a longer gap does not give the settlement more time; it
+      // gives it one enormous blow instead of two small ones.
+      const commit=Math.max(A.waveSize, Math.round(army.length*0.55));
+      // The ones already furthest from home march; the ones standing in the
+      // settlement stay standing in it.
+      const band=army.slice().sort((p,q)=>dist(q,tc)-dist(p,tc)).slice(0, commit);
+      for(const u of band) u.band=A.wave;
+      for(const u of band){
         if(UNIT[u.type].water){                       // galleys patrol their own water
           const wet=targets.filter(t=>UNIT[t.type]&&UNIT[t.type].water);
           if(wet.length){ let bb=null,bd2=1e9; for(const t of wet){const d=dist(u,t); if(d<bd2){bd2=d;bb=t;}} orderAttack(u,bb); }
@@ -4111,7 +4221,8 @@ function aiUpdate(o,dt){
         if(best) orderAMove(u,best.x,best.y);
       }
       if(FOE===PLAYER){
-        log('A '+houseAdj(o).toLowerCase()+' war band is moving — wave '+A.wave+', '+army.length+' strong.', true);
+        log('A '+houseAdj(o).toLowerCase()+' war band is moving — wave '+A.wave+', '+band.length+' strong'+
+            (army.length>band.length?' ('+(army.length-band.length)+' held back)':'')+'.', true);
         sfx('alert');
       } else if(rnd()<0.5)
         dispatch(o,FOE,houseName(o)+' has sent a war band against '+houseName(FOE)+'.','war');
@@ -4119,8 +4230,12 @@ function aiUpdate(o,dt){
     A.waveSize=Math.min(D.waveCap, A.waveSize+D.waveStep);
   }
   if(A.attacking){
-    if(!army.some(u=>u.task==='attack')) A.attacking=false;
-    for(const u of army){
+    // Only the band that was sent keeps going. The guard left at home is not
+    // dragged along behind it one idle man at a time, which is what used to
+    // turn every wave into the whole army eventually.
+    const out=army.filter(u=>u.band===A.wave);
+    if(!out.some(u=>u.task==='attack')) A.attacking=false;
+    for(const u of out){
       if(u.task==='idle'){
         const t=ents.filter(e=>!e.dead&&e.owner===FOE);
         if(t.length){ let best=null,bd=1e9; for(const q of t){const d=dist(u,q); if(d<bd){bd=d;best=q;}} orderAttack(u,best); }
@@ -5302,10 +5417,12 @@ function roundRect(g,x,y,w,h,r){
 // Five bands that genuinely differ: shaded meadow through to bare earth. The
 // old set spanned barely twenty units of hue and read as one flat olive.
 // ---- the year --------------------------------------------------------------
-// Four minutes to the year, a minute to the season. Everything seasonal reads
-// off gameTime, so a save carries the date without storing one, and the two
-// views cannot disagree about what month it is.
-const YEAR=240, SEASON_LEN=YEAR/4;
+// Eight minutes to the year, two to the season. Everything seasonal reads off
+// gameTime, so a save carries the date without storing one, and the two views
+// cannot disagree about what month it is. At a minute to the season a crop
+// went in and came off twice before the light had finished changing, and
+// neither the farming nor the weather had time to mean anything.
+const YEAR=PACE.year, SEASON_LEN=YEAR/4;
 const seasonIdx=()=>Math.floor(gameTime/SEASON_LEN)%4;
 const seasonT=()=>(gameTime%SEASON_LEN)/SEASON_LEN;
 const yearNo=()=>1+Math.floor(gameTime/YEAR);
@@ -8482,6 +8599,42 @@ function drawBld(b){
     for(let i=0;i<Math.min(b.garr.length,8);i++)
       ctx.fillRect(px+5+i*6, py+h-6, 4, 4);
   }
+  // What a building is doing right now, readable without selecting it: a ring
+  // that fills as the thing inside it is made, a pip for every one still in the
+  // queue, and a mark on a hall that has been left a standing order. A player
+  // should be able to see an idle barracks from across the settlement.
+  if(b.owner===PLAYER && !b.building){
+    const s2=sides[PLAYER];
+    let p=-1, col='#7E9B54';
+    if(b.queue.length){ p=b.qt/UNIT[b.queue[0]].time; col='#C2453D'; }
+    else if(BLD[b.type].ages && s2.aging>0){ p=1-s2.aging/(s2.agingFull||1); col='#E8C15A'; }
+    else if(s2.teching && BLD[b.type].techs && BLD[b.type].techs.indexOf(s2.teching)>=0){
+      p=1-s2.techT/TECH[s2.teching].time; col='#79B4EE';
+    }
+    const top=py-w*formOf(b.type).pitch-11;
+    if(p>=0){
+      const cx2=px+w/2, cy2=top, r=8;
+      ctx.strokeStyle='rgba(20,16,11,.55)'; ctx.lineWidth=3.6;
+      ctx.beginPath(); ctx.arc(cx2,cy2,r,0,6.283); ctx.stroke();
+      ctx.strokeStyle=col; ctx.lineWidth=2.6;
+      ctx.beginPath(); ctx.arc(cx2,cy2,r,-1.5708,-1.5708+6.283*Math.max(0,Math.min(1,p))); ctx.stroke();
+      for(let i=1;i<Math.min(b.queue.length,7);i++){
+        ctx.fillStyle='rgba(232,220,190,.75)';
+        ctx.fillRect(cx2-b.queue.length*2+i*4+2, cy2+r+3, 2.6, 2.6);
+      }
+      if(b.rep){
+        ctx.fillStyle='#E8C15A';
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, 2.6, 0, 6.283); ctx.fill();
+      }
+    } else if(BLD[b.type].trains && b.type!=='tc' && !b.rep){
+      // An idle hall. Small and dim on purpose: it is a nudge, not an alarm.
+      ctx.fillStyle='rgba(20,16,11,.45)';
+      ctx.beginPath(); ctx.arc(px+w/2, top, 4.4, 0, 6.283); ctx.fill();
+      ctx.strokeStyle='rgba(232,193,90,.55)'; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(px+w/2, top, 4.4, 0, 6.283); ctx.stroke();
+    }
+  }
   if(b.flash>0){ ctx.fillStyle='rgba(255,90,60,'+Math.min(.6,b.flash*2.2)+')'; ctx.fillRect(px,py,w,h); }
   if(sel.includes(b)){ ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2; ctx.strokeRect(px-3,py-3,w+6,h+6); }
   barHp(b,px,py,w);
@@ -9346,6 +9499,44 @@ function updateHUD(){
   const q=queuedOf(PLAYER);
   document.getElementById('rPop').textContent=popOf(PLAYER)+(q?'+'+q:'')+'/'+capOf(PLAYER);
   document.getElementById('idleN').textContent=idleVils().length;
+  // The watch: how long the quiet lasts, then how ready you are for what is
+  // coming. Before the first war band it counts the clock down; after it, it
+  // reads your own soldiers against the biggest band anyone has ready to send.
+  {
+    const wn=document.getElementById('watchName'), wc=document.getElementById('watchChip');
+    const wb=document.getElementById('watchBar').firstChild;
+    const first=DIFF[difficulty].firstAttack;
+    let mine=0;
+    for(const u of unitCache)
+      if(u.owner===PLAYER&&!isVil(u)&&u.type!=='bearer'&&u.type!=='king') mine++;
+    let worst=0, hostile=false;
+    for(const o of AI_SIDES){
+      const A=AI[o]; if(!A) continue;
+      const foe=(A.foe===undefined||!aliveSide(A.foe))?PLAYER:A.foe;
+      if(foe!==PLAYER||!atWar(o,PLAYER)) continue;
+      hostile=true;
+      worst=Math.max(worst, A.waveSize);
+    }
+    // Nothing can march before the clock runs out, whoever has declared what,
+    // so the countdown is the true reading until it does.
+    if(gameTime<first){
+      const left=Math.max(0,first-gameTime);
+      wn.textContent='Quiet '+Math.floor(left/60)+':'+String(Math.floor(left%60)).padStart(2,'0');
+      wb.style.width=Math.round((1-left/first)*100)+'%';
+      wc.className=left<60?'warn':'';
+      wc.title='Nothing has marched yet. The first war band cannot move before this runs out.';
+    } else if(!hostile){
+      wn.textContent='Watchful';
+      wb.style.width='100%'; wc.className='';
+      wc.title='Nobody is at war with you. That will not last.';
+    } else {
+      const r=worst?Math.min(1,mine/worst):1;
+      wn.textContent=mine+' / '+worst;
+      wb.style.width=Math.round(r*100)+'%';
+      wc.className=r<0.5?'bad':r<1?'warn':'';
+      wc.title='Your soldiers against the largest war band anyone at war with you has ready to send.';
+    }
+  }
   const kb=document.getElementById('kingBtn'), kh=document.getElementById('kingHp');
   const kg=kingOf(PLAYER);
   if(kg){
@@ -9673,6 +9864,17 @@ function buildingCards(b){
       run:()=>{ b.auto=b.auto?0:1;
         if(b.auto&&b.stage===0) sowFarm(b);
         log(b.auto?'The field will sow itself again.':'The field is left fallow.');
+        sfx('select'); updatePanel(); }});
+  }
+  if((d.trains||[]).length){
+    card({name:b.rep?'Standing Order — on':'Standing Order', kind:'age',
+      cost:{f:0,w:0,g:0},
+      costHtml:b.rep?'<i>keeps raising the last one</i>':'<i>raise on repeat</i>',
+      tip:b.rep ? 'This hall keeps raising whatever it last finished, for as long as there is food, timber, gold and room for another. It stops on its own the moment there is not.'
+                : 'Keep raising whatever this hall last finished, without coming back to press the card again. It stops by itself when the stores or the population run out.',
+      enabled:true,
+      run:()=>{ b.rep=b.rep?0:1; b.repWarn=0;
+        log(b.rep?BLD[b.type].name+' will keep raising them.':BLD[b.type].name+' will stop after the queue.');
         sfx('select'); updatePanel(); }});
   }
   (d.trains||[]).forEach(t=>{
@@ -10053,6 +10255,7 @@ function serEnt(e){
                               +(e.skill||1).toFixed(3), e.planter||0];
     o.q=e.queue.slice(); o.qt=e.qt; o.am=e.amount; o.mx=e.max;
     o.rl=e.rally?[e.rally.x,e.rally.y,e.rally.res||0]:null; o.sn=e.seen?1:0; o.cd=e.cd;
+    o.rp=e.rep?1:0;
     o.gr=(e.garr||[]).map(serEnt);
   } else if(e.kind==='res'){
     o.bx=e.tx; o.by=e.ty; o.am=e.amount; o.mx=e.max; o.wb=e.wob;
@@ -10138,6 +10341,7 @@ function restore(snap){
       e.tx=o.bx; e.ty=o.by; e.w=d.w; e.h=d.h; e.building=!!o.b; e.prog=o.pg; e.buildTime=d.build;
       e.queue=o.q||[]; e.qt=o.qt; e.amount=o.am; e.max=o.mx;
       e.rally=o.rl?{x:o.rl[0],y:o.rl[1],res:o.rl[2]||0}:null; e.seen=!!o.sn; e.cd=o.cd; e._gr=o.gr||[];
+      e.rep=o.rp?1:0;   // absent in an older save, which simply means off
       e.r=Math.max(d.w,d.h)*TILE*0.5;
       if(o.t==='plot'){
         e.w=BLD.plot.w; e.h=BLD.plot.h;
@@ -10715,12 +10919,14 @@ function layBlock(farm){
       if(s.seed<CROP[i].seed) continue;
       any=true;
       const at=Math.floor((gameTime+CROP[i].time)/SEASON_LEN)%4;
-      // Season first, then a hand who knows it, less a penalty for what this
-      // order has already sown. A block that is all rye is not a farm, and it
-      // leaves three of the four trades standing about.
-      const v=CROP[i].yield*CROP[i].season[at]/CROP[i].time
-            + (hands.some(u=>UNIT[u.type].crop===i)?0.9:0)
-            - (sown[i]||0)*0.9;
+      // Season first, then a hand who knows it, discounted by what this order
+      // has already sown. A block that is all rye is not a farm and it leaves
+      // three of the four trades standing about. The discount is a fraction
+      // rather than a flat subtraction, because a flat one only spreads the
+      // block when the crops happen to score close together - in an autumn,
+      // where wheat is worth five times anything else, it never bit at all.
+      const v=(CROP[i].yield*CROP[i].season[at]/CROP[i].time)*Math.pow(0.70, sown[i]||0)
+            + (hands.some(u=>UNIT[u.type].crop===i)?0.9:0);
       if(v>bv){ bv=v; best=i; }
     }
     if(!any) break;                                // out of seed, not out of ideas
