@@ -58,9 +58,22 @@ flag.
 **The year turns.** Eight minutes to the year, two to the season. Spring is
 pale and full of blossom, summer is the valley at its best, autumn turns the
 broadleaves gold and drops leaves across the field, winter greys the grass,
-strips the trees and snows. It is not a filter over the top: the ground palette
-and every tree are rebaked, and the conifers stay green while everything around
-them turns, because they would.
+strips the trees, snows, and lies along every ridge in the settlement. It is not
+a filter over the top: the ground palette, every tree and — at the two winter
+boundaries and no others — every building are rebaked, and the conifers stay
+green while everything around them turns, because they would.
+
+**Four crowns that look like four crowns.** Colour alone does not do it: at the
+distance this is played from, a blue roof and a purple roof are the same roof.
+Ironvale roofs in slate and frames in oak; the Crimson Host roofs in clay tile
+over warm sanded plaster and frames sparely; Thornhollow roofs in split shingle
+under a heavy near-black frame; Saltmere roofs in reed over limewash and frames
+in silvered timber. Each flies its own shape of cloth — a swallowtail, a long
+pennon, a gonfalon with two tails, a square banner — and each carries its own
+shape of shield: a heater, a planked round, a kite, a steel buckler. None of it
+costs cache and none of it is in the save: buildings and figures were already
+baked per owner, and a save written before any of this existed opens into a
+valley that looks right.
 
 **Farming.** A farm is a steading: it grows nothing itself, it raises the four
 hands who do, and it takes in what they bring. A field is a separate thing — a
@@ -203,6 +216,28 @@ ends, and separate sliders in the menu set effects and ambience.
 own colour back along the line of the strike, blooms dust, and leaves a scar
 that fades. A ram or a mangonel throws twice as much and shakes the view.
 
+**And what comes off a man tells you what he is wearing.** Mail throws sparks
+and almost nothing else — a spark has no weight and no time to fall. A padded
+jack throws its own cloth, slower and heavier. A horse kicks dust off the ground
+it is standing on, a hull throws water and splinters, a ram throws timber. It is
+the fastest way to tell an armoured man from an unarmoured one in a crowd, and it
+costs one branch at the moment of the blow.
+
+**Weapons leave the line they took.** A blade sweeps, so its streak is the arc
+the point actually travelled about the hand; a spear and a lance do not sweep,
+so theirs is the straight line from where the point was drawn back to where it
+went in. Both come out of the same arithmetic the figure is drawn with, so the
+trail sits on the blade rather than beside it. An arrow casts a shadow that
+stays on the ground while the shaft climbs away from it, which is what makes the
+arc read as height rather than as a line drawn slightly wrong.
+
+**A razed building comes down.** It does not blink out. It drops through itself,
+throws its own wall and roof outward, blooms dust from the footprint, and shakes
+the ground in proportion to how big it was — a keep is felt, a hut is not. What
+is left is a burnt plot with its stones lying in it, smoking for a few seconds
+and then slowly taken back by the grass. The rubble is baked once per building
+type, so a settlement burning down costs what one building costs.
+
 **A three-dimensional view.** Press the backtick key, or the View button in the
 top bar, and the valley stands up: a rolling height field, a low sun that models
 the hills, water with its own surface, and haze that carries the far side of the
@@ -241,6 +276,7 @@ npm test
 | `view.test.js` | The 3D view: that it builds, that a click lands on the pixel it was aimed at, that selecting, ordering and building all work through the camera, and that elevation never reaches the simulation |
 | `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, and that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
+| `houses.test.js` | The four crowns' faces: that each roofs its whole settlement in one material and no two share it, that the roof in the picture is the roof on the table, that a knight of another house is built differently rather than tinted differently, that a roof carries snow in winter and not in summer, that only the two winter boundaries rebake a settlement, and that none of it is in the save |
 | `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
 
 Individual suites: `npm run test:water`, and so on.
@@ -266,7 +302,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the fifteen suites
+test/*.test.js         the sixteen suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block

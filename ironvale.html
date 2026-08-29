@@ -780,6 +780,24 @@ const HOUSE=[
   {id:3, name:'Thornhollow',  adj:'Thornhollow',col:'#6E4A93', lit:'#A986CE'},
   {id:4, name:'Saltmere',     adj:'Saltmere',  col:'#2E8C7A', lit:'#66C7B2'}
 ];
+// Colour alone is a poor way to tell four crowns apart: at gameplay scale a
+// blue roof and a purple roof are the same roof. Each house roofs in its own
+// material, flies its own shape of cloth, and carries its own shape of shield -
+// so a settlement reads as somebody's before you have read a single banner.
+// None of it costs cache: buildings and figures are already baked per owner.
+const SIG=[
+  {roof:'slate',   rc:'#5E6E80', pennant:'swallow',  shield:'heater',
+   beam:'rgba(78,60,38,.62)',  wash:null,                  posts:0},
+  {roof:'tile',    rc:'#9A4A32', pennant:'pennon',   shield:'round',
+   beam:'rgba(104,58,36,.60)', wash:'rgba(206,160,104,.16)', posts:-1},
+  {roof:'thatch',  rc:'#8A7448', pennant:'square',   shield:'round',     // marauders
+   beam:'rgba(70,54,34,.62)',  wash:null,                  posts:0},
+  {roof:'shingle', rc:'#4E4038', pennant:'gonfalon', shield:'kite',
+   beam:'rgba(38,30,22,.72)',  wash:'rgba(96,84,66,.14)',  posts:1},
+  {roof:'reed',    rc:'#9A9A6E', pennant:'square',   shield:'buckler',
+   beam:'rgba(126,120,104,.58)', wash:'rgba(224,232,232,.18)', posts:0}
+];
+const sigOf=o=>SIG[o]||SIG[1];
 const SETTLEMENTS=[PLAYER,ENEMY,3,4];        // everyone with a king and a town
 const AI_SIDES=[ENEMY,3,4];                  // everyone with a king who is not you
 const houseName=o=>(HOUSE[o]||HOUSE[1]).name;
@@ -1286,6 +1304,7 @@ let battleHeat=0, visWater=0, shake=0;
 const flocks=[];
 let flockAt=3+Math.random()*6;
 let scarred=[];        // only the buildings currently carrying marks
+let wrecks=[];         // buildings that have come down, still coming down
 function onScreen(x,y,pad){
   pad=pad||0;
   return x>cam.x-pad && y>cam.y-pad && x<cam.x+innerWidth+pad && y<cam.y+innerHeight+pad;
@@ -1353,6 +1372,99 @@ function bldImpact(src,b,heavy){
   if(b.scars.length<14)
     b.scars.push({dx:ix-b.x, dy:iy-b.y, r:(heavy?5:3)+rnd()*2.5, t:heavy?5:3.2, life:heavy?5:3.2});
   if(heavy) shake=Math.min(6, shake+2.4);
+}
+
+// A building that is razed does not blink out. It drops through itself, throws
+// its own wall and roof outward, blooms dust from the footprint, and leaves a
+// burnt plot with its stones still lying in it. The rubble is baked once per
+// building type, so a settlement burning down costs the same as one building.
+function rubbleSprite(type){
+  const d=BLD[type], w=d.w*TILE, h=d.h*TILE;
+  return sprite('RB'+type, w+12, h+12, g=>{
+    const wall=hexRGB(d.wall||'#B9A87F');
+    let sd=(type.charCodeAt(0)*7919+w*131+h*17)>>>0;
+    const R=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    g.save(); g.translate(6,6);
+    g.fillStyle='rgba(38,30,20,.36)';                       // scorched ground
+    g.beginPath(); g.ellipse(w/2,h*0.60,w*0.54,h*0.42,0,0,6.283); g.fill();
+    g.fillStyle='rgba(20,16,10,.22)';
+    g.beginPath(); g.ellipse(w/2,h*0.62,w*0.34,h*0.26,0,0,6.283); g.fill();
+    g.strokeStyle='rgba(38,28,20,.62)'; g.lineWidth=2;      // charred beams
+    for(let i=0;i<3;i++){
+      const ax=w*0.20+R()*w*0.55, ay=h*0.28+R()*h*0.50, an=R()*3.14;
+      g.beginPath(); g.moveTo(ax,ay);
+      g.lineTo(ax+Math.cos(an)*(9+R()*13), ay+Math.sin(an)*(4+R()*7)); g.stroke();
+    }
+    const n=Math.min(46, 7+Math.round(w*h/230));            // fallen block
+    for(let i=0;i<n;i++){
+      const bx=w*0.08+R()*w*0.84, by=h*0.18+R()*h*0.74;
+      const bw2=2+R()*5, bh2=1.6+R()*3, k=0.50+R()*0.38;
+      g.fillStyle='rgb('+(wall[0]*k|0)+','+(wall[1]*k|0)+','+(wall[2]*k|0)+')';
+      g.fillRect(bx,by,bw2,bh2);
+      g.fillStyle='rgba(0,0,0,.24)'; g.fillRect(bx,by+bh2,bw2,1);
+    }
+    g.restore();
+  }, {ox:6, oy:6});
+}
+function bldWreck(b){
+  if(b.type==='plot') return;                  // a field is not a building
+  const bw=b.w*TILE, bh=b.h*TILE;
+  if(onScreen(b.x,b.y,200)){
+    const wall=hexRGB(BLD[b.type].wall||'#B9A87F');
+    const roof=hexRGB(BLD[b.type].roof||'#7A5E38');
+    for(let i=0;i<22&&sparks.length<190;i++){
+      const th=rnd()*6.283, col=rnd()<0.55?wall:roof, k=0.7+rnd()*0.4;
+      sparks.push({x:b.x+(rnd()-0.5)*bw, y:b.y+(rnd()-0.5)*bh*0.6,
+        vx:Math.cos(th)*(60+rnd()*130), vy:Math.sin(th)*40-90-rnd()*120,
+        t:0.5+rnd()*0.5, h:rnd(),
+        c:[col[0]*k|0, col[1]*k|0, col[2]*k|0]});
+    }
+    for(let i=0;i<10&&puffs.length<235;i++){
+      const th=rnd()*6.283, dd=rnd()*Math.max(bw,bh)*0.5;
+      puffs.push({x:b.x+Math.cos(th)*dd, y:b.y+Math.sin(th)*dd*0.55+bh*0.22,
+        t:0.9+rnd()*0.5, r:5+rnd()*7, dust:true});
+    }
+    // The ground moves when a keep comes down and barely notices a hut.
+    shake=Math.min(7, shake+1.0+Math.min(2.6, bw*bh/2400));
+  }
+  wrecks.push({type:b.type, owner:b.owner, v:(b.id>>1)&1,
+               tx:b.tx, ty:b.ty, x:b.x, y:b.y, t:7, life:7});
+}
+
+// What comes off a man when he is hit is the fastest way to read what he is
+// wearing. Mail throws sparks and almost nothing else - a spark has no weight
+// and no time to fall. A padded jack throws its own cloth, slower and heavier.
+// A horse kicks dust off the ground it is standing on, a hull throws water and
+// splinters. Same call site, four different readings, no extra state.
+function hitDebris(src,t){
+  if(sparks.length>150) return;
+  const K=unitKit(t.type), cls=UNIT[t.type].cls;
+  const a=Math.atan2(t.y-src.y, t.x-src.x);           // the line of the blow
+  const throwOff=(n,sp,life,col,lift)=>{
+    for(let i=0;i<n&&sparks.length<170;i++){
+      const th=a+(rnd()-0.5)*1.35;
+      sparks.push({x:t.x+(rnd()-0.5)*9, y:t.y-5+(rnd()-0.5)*9,
+        vx:Math.cos(th)*sp*(0.55+rnd()*0.9),
+        vy:Math.sin(th)*sp*0.45-lift-rnd()*lift,
+        t:life*(0.7+rnd()*0.6), h:rnd(), c:col});
+    }
+  };
+  if(cls==='ship'){
+    throwOff(5, 70, 0.34, [198,226,234], 55);          // spray
+    throwOff(2, 52, 0.32, hexRGB('#6B4C2E'), 40);      // and hull
+    return;
+  }
+  if(cls==='siege'){ throwOff(6, 92, 0.36, [176,140,88], 55); return; }
+  if(K.mail || armorOf(t)>=4){
+    throwOff(4, 155, 0.15, null, 60);                  // hot, fast, and gone
+    throwOff(2, 60, 0.28, hexRGB(K.shade), 35);
+  } else {
+    throwOff(4, 82, 0.34, hexRGB(K.cloth), 45);
+    throwOff(2, 62, 0.36, hexRGB(K.shade), 40);
+  }
+  if(K.horse && puffs.length<230)
+    puffs.push({x:t.x+(rnd()-0.5)*14, y:t.y-6+unitGeom(t.type).foot,
+                t:0.5, r:3+rnd()*3});
 }
 
 function workStrike(u,res,W){
@@ -1913,7 +2025,7 @@ function newGame(diff){
           camps:0, raiders:0, tradesmen:0, flagBest:0, army:0};
   objDone=Object.create(null);
   groups=Object.create(null);
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
   hist=[]; histAt=0;
   aiReset(); envoy=null;
   seed=(Date.now()>>>0)^0x9E3779B9;
@@ -2501,12 +2613,9 @@ function hit(src,t){
     if(uRange(src)>60) sfx('bow');
     else sfx(armorOf(t)>=4 ? 'clang' : 'slash');
   }
-  if(sparks.length<160){
-    const n=t.kind==='bld'?2:3;
-    for(let i=0;i<n;i++)
-      sparks.push({x:t.x+(rnd()-0.5)*10, y:t.y-4+(rnd()-0.5)*10,
-        vx:(rnd()-0.5)*90, vy:-40-rnd()*70, t:0.18+rnd()*0.16, h:rnd()});
-  }
+  // A building already throws its own wall back at the attacker in bldImpact;
+  // a man throws whatever he is wearing.
+  if(seen && t.kind==='unit') hitDebris(src,t);
   if(t.kind==='unit'&&t.type==='king'&&t.owner===PLAYER&&gameTime-(lastKingCry||-99)>7){
     lastKingCry=gameTime;
     log('YOUR KING IS UNDER ATTACK — '+Math.round(t.hp/t.maxHp*100)+'% left.',true);
@@ -2522,6 +2631,7 @@ function hit(src,t){
   }
   if(t.hp<=0){
     t.dead=true;
+    if(t.kind==='bld'&&!t.building&&wrecks.length<40) bldWreck(t);
     if(t.kind==='unit'&&UNIT[t.type].cls!=='ship'&&fallen.length<80)
       fallen.push({x:t.x, y:t.y, type:t.type, owner:t.owner,
                    tilt:(t.id&1?1:-1)*1.32, t:2.6, life:2.6,
@@ -4829,7 +4939,7 @@ function v3Collect(at){
       // brighter than the colour the two views are meant to share.
       const LIFT=(h,k)=>{ const c=HEX(h); return [Math.min(255,c[0]*k),Math.min(255,c[1]*k),Math.min(255,c[2]*k)]; };
       const wall=LIFT(d.wall||'#B9A87F',1.30);
-      const roof=LIFT(d.roof||teamColor(e.owner),1.34);
+      const roof=LIFT(roofOf(d.roof, e.owner),1.34);
       const cx=e.tx*TILE+W2/2, cz=e.ty*TILE+H2/2;
       const g2=heightAt(cx,cz);
       if(e.type==='palisade'||e.type==='stonewall'||e.type==='gate'){
@@ -5266,6 +5376,18 @@ function frameBody(now){
     fallen=fallen.filter(q=>q.t>0);
     for(const q of spent) q.t-=dt;
     spent=spent.filter(q=>q.t>0);
+    if(wrecks.length){
+      for(const q of wrecks){
+        q.t-=dt;
+        // A ruin goes on smoking after the dust has settled, and the smoke is
+        // darker than a hearth's - that is the difference between a house that
+        // is lived in and one that has been burnt.
+        if(q.t>q.life-3.2 && puffs.length<225 && onScreen(q.x,q.y,120) && rnd()<dt*7)
+          puffs.push({x:q.x+(rnd()-0.5)*26, y:q.y+(rnd()-0.5)*14,
+                      t:1.3+rnd()*0.5, r:3.5+rnd()*3, rise:1, dark:1});
+      }
+      wrecks=wrecks.filter(q=>q.t>0);
+    }
     // Only buildings that actually carry scars pay anything here.
     if(scarred.length){
       for(let i=scarred.length-1;i>=0;i--){
@@ -5507,9 +5629,16 @@ function applySeason(i){
   for(let k=0;k<TREE_DARK.length;k++){ TREE_DARK[k]=S.dark[k]; TREE_LIT[k]=S.lit[k]; }
   for(let k=0;k<DETAIL.length;k++) DETAIL[k]=S.detail[k];
   for(let k=0;k<GRASS_RGB.length;k++) GRASS_RGB[k]=hexRGB(GRASS[k]);
+  // Roofs carry snow and only in winter, so the buildings have to be rebaked
+  // when winter arrives and when it goes - and only then. Four purges a year
+  // instead of two would rebake every building in the settlement to change
+  // nothing at all.
+  const wasWinter=(seasonNow===3), isWinter=(i===3);
   seasonNow=i;
   chunkCache.clear();
   for(const k in SPRITE) if(k[0]==='t'&&k.slice(0,4)==='tree') delete SPRITE[k];
+  if(wasWinter!==isWinter)
+    for(const k in SPRITE) if(k[0]==='B') delete SPRITE[k];
   if(V3.gl) V3.colDirty=true;
   weatherRetarget(S.weather);
 }
@@ -5742,6 +5871,21 @@ function roofTint(c,v){
   if(!v||!c||c[0]!=='#') return c;
   const [r,g,b]=hexRGB(c);
   return 'rgb('+Math.round(r*0.88)+','+Math.round(g*0.90)+','+Math.round(b*0.96)+')';
+}
+// The house supplies the material; the building keeps its own value, so a
+// granary is still lighter than a smithy under either crown. Sixty per cent is
+// where the four sides became tellable at a glance without the mill and the
+// market ending up the same colour as each other.
+function roofOf(c,owner){
+  const h=sigOf(owner).rc;
+  if(!c||c[0]!=='#') return h;
+  const [r,g,b]=hexRGB(c), [hr,hg,hb]=hexRGB(h);
+  const v=(r*0.30+g*0.59+b*0.11)/((hr*0.30+hg*0.59+hb*0.11)||1);
+  const k=Math.max(0.72, Math.min(1.34, 0.55+v*0.45));
+  // Hex out, not rgb(): the three-dimensional view parses this back into
+  // numbers, and roofTint does too.
+  const cl=n=>('0'+Math.max(0,Math.min(255,Math.round(n))).toString(16)).slice(-2);
+  return '#'+cl(hr*k)+cl(hg*k)+cl(hb*k);
 }
 const formOf=t=>FORM[t]||FORM_DEF;
 const CH_T=8, CH_PX=CH_T*28;
@@ -6494,7 +6638,8 @@ function draw(){
       // Woodsmoke. It goes up, it thins as it goes, and it leans with the same
       // wind the trees are leaning in.
       const age=1-q.t/1.5;
-      ctx.fillStyle='rgba(206,200,186,'+(q.t*0.34).toFixed(2)+')';
+      ctx.fillStyle = q.dark ? 'rgba(74,68,60,'+(q.t*0.30).toFixed(2)+')'
+                             : 'rgba(206,200,186,'+(q.t*0.34).toFixed(2)+')';
       ctx.beginPath();
       ctx.arc(q.x-cam.x+age*age*26*(0.35+WIND), q.y-cam.y-age*34,
               q.r*(1+age*2.4), 0, 6.283);
@@ -6512,6 +6657,13 @@ function draw(){
     const ax=s.x1+(s.x2-s.x1)*p, ay=s.y1+(s.y2-s.y1)*p - Math.sin(p*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
     const bp=Math.max(0,p-0.22);
     const bx=s.x1+(s.x2-s.x1)*bp, by=s.y1+(s.y2-s.y1)*bp - Math.sin(bp*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
+    // The shadow is the arrow without the arc: it stays on the ground while the
+    // shaft climbs away from it, which is what makes the arc read as height
+    // rather than as a line drawn slightly wrong.
+    const shy=s.y1+(s.y2-s.y1)*p;
+    ctx.fillStyle='rgba(24,20,12,.20)';
+    ctx.beginPath();
+    ctx.ellipse(ax-cam.x, shy-cam.y+5, 3.2, 1.3, 0, 0, 6.283); ctx.fill();
     ctx.strokeStyle=s.own===PLAYER?'rgba(214,232,255,.9)':'rgba(255,206,190,.9)';
     ctx.lineWidth=1.8; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(bx-cam.x,by-cam.y); ctx.lineTo(ax-cam.x,ay-cam.y); ctx.stroke();
@@ -7764,6 +7916,10 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
     const wp=grainPat(g,'plaster',48,7,GRAIN_DARK,GRAIN_LIGHT,0.16);
     if(wp){ g.save(); g.beginPath(); g.rect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.clip();
       g.fillStyle=wp; g.fillRect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.restore(); }
+    // What the house washes its plaster with. Thin, because the roof is doing
+    // the loud work and two loud cues on one building is a costume.
+    const wash=sigOf(owner).wash;
+    if(wash){ g.fillStyle=wash; g.fillRect(px+2,wallTop,w-4,(py+h)-wallTop-2); }
   }
   if(!isFarm){
     // A rubble footing: every one of these was built off the ground.
@@ -7792,8 +7948,11 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
         for(let bx=px+5+((r%2)?11:0); bx<px+w-8; bx+=44)
           g.fillRect(bx, ry+1.5, 19, 2);
     } else {
-    g.strokeStyle='rgba(78,60,38,.62)'; g.lineWidth=2.2;
-    const posts=Math.max(2, Math.round((w-8)/22)+v);
+    // How a house frames a wall is as much its own as what it roofs with: a
+    // forest crown puts up more timber and darker, a southern one puts up less.
+    const SG=sigOf(owner);
+    g.strokeStyle=SG.beam; g.lineWidth=2.2;
+    const posts=Math.max(2, Math.round((w-8)/22)+v+SG.posts);
     for(let i=0;i<=posts;i++){
       const x=px+4+(w-8)*(i/posts);
       g.beginPath(); g.moveTo(x,t0); g.lineTo(x,t1); g.stroke();
@@ -7920,16 +8079,32 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
       g.closePath();
     };
     if(F.roof!=='flat'){
-    g.fillStyle=roofTint(d.roof||teamColor(owner), v);
+    const MAT=sigOf(owner).roof;
+    g.fillStyle=roofTint(roofOf(d.roof, owner), v);
     roofPath(); g.fill();
     g.fillStyle='rgba(255,255,255,.15)';                    // the sunward slope
     g.beginPath();
     g.moveTo(L0,eave); g.lineTo(cx0-ridge,apex); g.lineTo(cx0-ridge,eave); g.closePath(); g.fill();
     g.save();
     roofPath(); g.clip();
-    g.strokeStyle='rgba(28,22,14,.16)'; g.lineWidth=HAIR();               // courses of tile
-    for(let ry=apex+4; ry<eave; ry+=COURSE(4)){
-      g.beginPath(); g.moveTo(L0,ry); g.lineTo(R0,ry); g.stroke();
+    // Slate lies in tight courses, tile in wider ones, shingle wider still and
+    // broken across the joins; thatch and reed have no courses at all - what
+    // they have is texture, so they get the grain instead.
+    if(MAT!=='thatch'&&MAT!=='reed'){
+      const step=COURSE(MAT==='slate'?3:MAT==='shingle'?5.5:4);
+      g.strokeStyle=MAT==='shingle'?'rgba(24,18,12,.26)':'rgba(28,22,14,.16)';
+      g.lineWidth=HAIR();
+      for(let ry=apex+4; ry<eave; ry+=step){
+        g.beginPath(); g.moveTo(L0,ry); g.lineTo(R0,ry); g.stroke();
+      }
+      if(MAT==='shingle'){                                  // split, and staggered
+        g.strokeStyle='rgba(24,18,12,.20)';
+        let row=0;
+        for(let ry=apex+4; ry<eave; ry+=step, row++)
+          for(let rx=L0+(row&1?step*1.2:0); rx<R0; rx+=step*2.4){
+            g.beginPath(); g.moveTo(rx,ry); g.lineTo(rx,ry+step); g.stroke();
+          }
+      }
     }
     if(tier>=2){                                                          // shed tiles
       g.fillStyle='rgba(26,20,13,.55)';
@@ -7942,7 +8117,11 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
       g.lineTo(px+w*0.44,apex+11); g.lineTo(px+w*0.34,py+12); g.closePath(); g.fill();
     }
     const tp=grainPat(g,'thatch',48,11,GRAIN_DARK,GRAIN_LIGHT,0.22);
-    if(tp){ g.fillStyle=tp; g.fillRect(px-4,apex-2,w+8,(py+14)-apex+4); }
+    if(tp){
+      g.globalAlpha = MAT==='thatch'?1 : MAT==='reed'?0.85 : MAT==='slate'?0.30 : 0.55;
+      g.fillStyle=tp; g.fillRect(px-4,apex-2,w+8,(py+14)-apex+4);
+      g.globalAlpha=1;
+    }
     g.restore();
     g.strokeStyle=sunLit(.22); g.lineWidth=1.5;
     g.beginPath(); g.moveTo(L0,eave); g.lineTo(cx0-ridge,apex); g.stroke();
@@ -7952,6 +8131,26 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
     // a ridge cap along the peak
     g.strokeStyle=sunLit(.30); g.lineWidth=2;
     g.beginPath(); g.moveTo(cx0-ridge-1.5,apex+1.5); g.lineTo(cx0+ridge+1.5,apex+1.5); g.stroke();
+    // Winter. Snow lies along the ridge and thins down the pitch, and what has
+    // slid stops at the eave in a lip. A settlement whose ground goes white and
+    // whose roofs do not is a settlement standing in somebody else's weather.
+    if(seasonNow===3){
+      g.save(); roofPath(); g.clip();
+      // Solid where it has settled, then thinning down the pitch. A gradient
+      // alone never gets bright enough to read as snow over a dark roof.
+      g.fillStyle='rgba(247,251,254,.95)';
+      g.fillRect(px-6, apex-4, w+12, (eave-apex)*0.30+4);
+      const gr=g.createLinearGradient(0, apex+(eave-apex)*0.26, 0, apex+(eave-apex)*0.70);
+      gr.addColorStop(0,'rgba(247,251,254,.92)');
+      gr.addColorStop(1,'rgba(247,251,254,0)');
+      g.fillStyle=gr;
+      g.fillRect(px-6, apex+(eave-apex)*0.26, w+12, (eave-apex)*0.48+4);
+      g.fillStyle='rgba(228,238,246,.72)';
+      g.fillRect(px-6, eave-3, w+12, 3.4);
+      g.restore();
+      g.fillStyle='rgba(246,250,253,.90)';                 // and along the very ridge
+      g.fillRect(cx0-ridge-2, apex-0.5, ridge*2+4, 2.6);
+    }
     if(F.roof==='gable'){
       // Bargeboards down both rakes and a crossed pair of timbers in the gable.
       // This is the join a real roof makes with a real wall, and it is most of
@@ -8346,7 +8545,7 @@ function bldSignature(g,type,owner,px,py,w,h,tier){
     g.fillRect(pxx, top+4, 5.4, ph-4); g.fillRect(pxx+pw-5.4, top+4, 5.4, ph-4);
     g.fillStyle=sunLit(.16); g.fillRect(pxx, top+4, 1.8, ph-4);
     g.fillStyle=skyShade(.30); g.fillRect(pxx+pw-2, top+4, 2, ph-4);
-    g.fillStyle=d.roof||teamColor(owner);                           // its own little roof
+    g.fillStyle=roofOf(d.roof, owner);                              // its own little roof
     g.beginPath();
     g.moveTo(pxx-6, top+6); g.lineTo(cx, top-9); g.lineTo(pxx+pw+6, top+6); g.closePath(); g.fill();
     g.fillStyle='rgba(255,255,255,.15)';
@@ -8693,21 +8892,11 @@ function drawBld(b){
         ctx.beginPath(); ctx.arc(0,0,3.2,0,6.283); ctx.fill();
         ctx.restore();
       }
-      if(d.roof){                                          // the cloth on the roof pole
-        const fl=Math.sin(gameTime*3+b.id)*2.2;
-        ctx.fillStyle=teamLight(b.owner);
-        ctx.beginPath(); ctx.moveTo(cx,apex-13);
-        ctx.quadraticCurveTo(cx+7,apex-11+fl, cx+11,apex-9.5+fl);
-        ctx.quadraticCurveTo(cx+6,apex-8+fl, cx,apex-6); ctx.closePath(); ctx.fill();
-      }
+      if(d.roof) cloth(ctx, cx, apex-13, 11, b.owner, gameTime*3+b.id);
       if(b.type==='tc'||b.type==='castle'){                // the great pennant
         const m=bldMast(b.type,py,w);
-        const top=b.type==='castle'?m-18:m-16, sp2=b.type==='castle'?15:14;
-        const fl=Math.sin(gameTime*2.6+b.id*1.7)*2.4;
-        ctx.fillStyle=teamLight(b.owner);
-        ctx.beginPath(); ctx.moveTo(cx,top);
-        ctx.quadraticCurveTo(cx+sp2*0.6,top+3+fl, cx+sp2,top+5+fl);
-        ctx.quadraticCurveTo(cx+sp2*0.5,top+7, cx,top+10); ctx.closePath(); ctx.fill();
+        cloth(ctx, cx, b.type==='castle'?m-18:m-16, b.type==='castle'?15:14,
+              b.owner, gameTime*2.6+b.id*1.7);
       }
     }
   }
@@ -8985,6 +9174,21 @@ function unitKit(type){
   KIT_CACHE[type]=k; return k;
 }
 
+// Where the hand is and where the point of the weapon is, for a given kit and
+// a given lunge, measured from the figure's own centre and the top of its head.
+// unitFigure draws the weapon to this; drawUnit draws the streak the point
+// leaves along the same path. They have to come out of one piece of arithmetic
+// or the trail floats off the blade.
+function wepGeom(K,S,lunge){
+  const hx=S*0.34+lunge*S*0.34, hy=S*0.46-lunge*S*0.24;
+  const g={hx,hy,tx:hx,ty:hy};
+  if(K.wep==='sword'){ g.tx=hx+S*(0.54+lunge*0.54); g.ty=hy-S*(0.74-lunge*0.66); }
+  else if(K.wep==='spear'){ g.tx=hx+S*(0.34+lunge*0.62); g.ty=hy-S*(2.05-lunge*0.90); }
+  else if(K.wep==='lance'){ g.tx=hx+S*(1.60+lunge*0.42); g.ty=hy-S*(1.14-lunge*0.62); }
+  return g;
+}
+const LUNGE_WIND=-0.55, LUNGE_STRIKE=1;
+
 // A soldier's torso, head and helm never change; only his weapon arm, his bob
 // and his banners do. The body is baked once per type, side, pose and facing.
 function unitGeom(type){
@@ -9040,7 +9244,7 @@ function unitFigure(g,type,owner,x,top,pose,dir){
   const L=dir>0?-1:1;
   const SW=[0, 1, 0, -1, 0, -0.35, 0.9, 0.5][pose];
   const lift=[0, 0.9, 0, 0.9, 0, 0, 0, 0][pose];
-  const lunge=[0,0,0,0,0, -0.55, 1, 0.45][pose];
+  const lunge=[0,0,0,0,0, LUNGE_WIND, LUNGE_STRIKE, 0.45][pose];
   const wind=pose===5;
   const bot=top+14, hip=bot-1;
   const legged = cls!=='cav'&&cls!=='siege'&&cls!=='ship';
@@ -9236,32 +9440,72 @@ function unitFigure(g,type,owner,x,top,pose,dir){
   /* ---- shield, worn in front of the body ---- */
   if(K.shield){
     const sx=x-S*0.16-lunge*S*0.14, sy=top+S*0.44;
-    if(K.shield===1){
-      g.fillStyle=col;
-      g.beginPath(); g.arc(sx,sy,S*0.46,0,6.283); g.fill();
+    // A shield is the largest flat thing a man carries and the easiest shape to
+    // read at this size, so it is where a house's identity goes. The kit still
+    // decides how big it is - a knight's is bigger than a footman's - and the
+    // house decides what shape it is.
+    const big=K.shield>=2, k=big?1:0.80;
+    const SH=sigOf(owner).shield;
+    g.beginPath();
+    if(SH==='round'||SH==='buckler'){
+      const r=S*(big?0.54:0.46)*(SH==='buckler'?0.86:1);
+      g.arc(sx,sy,r,0,6.283);
+      g.fillStyle=col; g.fill();
       g.fillStyle=sunLit(.16);
-      g.beginPath(); g.arc(sx,sy,S*0.46,Math.PI*0.55,Math.PI*1.55); g.fill();
-      g.strokeStyle='rgba(24,20,12,.55)'; g.lineWidth=1.4;
-      g.beginPath(); g.arc(sx,sy,S*0.46,0,6.283); g.stroke();
-      g.fillStyle='#C9CFD6';
-      g.beginPath(); g.arc(sx,sy,S*0.14,0,6.283); g.fill();
-    } else {
-      g.fillStyle=col;
-      g.beginPath();
-      g.moveTo(sx-S*0.38,sy-S*0.56); g.lineTo(sx+S*0.38,sy-S*0.56);
-      g.quadraticCurveTo(sx+S*0.38,sy+S*0.44, sx,sy+S*0.78);
-      g.quadraticCurveTo(sx-S*0.38,sy+S*0.44, sx-S*0.38,sy-S*0.56);
-      g.closePath(); g.fill();
+      g.beginPath(); g.arc(sx,sy,r,Math.PI*0.55,Math.PI*1.55); g.fill();
+      g.strokeStyle='rgba(24,20,12,.58)'; g.lineWidth=1.4;
+      g.beginPath(); g.arc(sx,sy,r,0,6.283); g.stroke();
+      if(SH==='buckler'){
+        // A buckler is a fist shield: mostly steel, with a deep boss and a rim.
+        g.fillStyle='#B9C0C8';
+        g.beginPath(); g.arc(sx,sy,r*0.74,0,6.283); g.fill();
+        g.fillStyle='#DDE3E9';
+        g.beginPath(); g.arc(sx-r*0.10,sy-r*0.12,r*0.42,0,6.283); g.fill();
+        g.strokeStyle='rgba(24,20,12,.50)'; g.lineWidth=1;
+        g.beginPath(); g.arc(sx,sy,r*0.74,0,6.283); g.stroke();
+      } else {
+        // A round shield is planked: staves out from the boss, which is what
+        // stops it reading as a coloured dot.
+        g.strokeStyle='rgba(24,20,12,.30)'; g.lineWidth=1;
+        for(let i=0;i<4;i++){
+          const th=i*0.7854+0.39;
+          g.beginPath();
+          g.moveTo(sx+Math.cos(th)*r*0.30, sy+Math.sin(th)*r*0.30);
+          g.lineTo(sx+Math.cos(th)*r, sy+Math.sin(th)*r);
+          g.moveTo(sx-Math.cos(th)*r*0.30, sy-Math.sin(th)*r*0.30);
+          g.lineTo(sx-Math.cos(th)*r, sy-Math.sin(th)*r);
+          g.stroke();
+        }
+        g.fillStyle='#C9CFD6';                              // the boss
+        g.beginPath(); g.arc(sx,sy,r*0.30,0,6.283); g.fill();
+      }
+    } else if(SH==='kite'){                                 // long, and tapering
+      g.moveTo(sx-S*0.34*k,sy-S*0.62*k);
+      g.quadraticCurveTo(sx,sy-S*0.80*k, sx+S*0.34*k,sy-S*0.62*k);
+      g.lineTo(sx+S*0.26*k,sy+S*0.52*k);
+      g.quadraticCurveTo(sx,sy+S*0.96*k, sx-S*0.26*k,sy+S*0.52*k);
+      g.closePath();
+      g.fillStyle=col; g.fill();
+      g.strokeStyle='rgba(24,20,12,.60)'; g.lineWidth=1.6; g.stroke();
+      g.strokeStyle=sunLit(.30); g.lineWidth=1;                // a long brace down
+      g.beginPath(); g.moveTo(sx,sy-S*0.66*k); g.lineTo(sx,sy+S*0.80*k);
+      g.moveTo(sx-S*0.28*k,sy-S*0.20*k); g.lineTo(sx+S*0.28*k,sy-S*0.20*k); g.stroke();
+    } else {                                                // heater
+      g.moveTo(sx-S*0.38*k,sy-S*0.56*k); g.lineTo(sx+S*0.38*k,sy-S*0.56*k);
+      g.quadraticCurveTo(sx+S*0.38*k,sy+S*0.44*k, sx,sy+S*0.78*k);
+      g.quadraticCurveTo(sx-S*0.38*k,sy+S*0.44*k, sx-S*0.38*k,sy-S*0.56*k);
+      g.closePath();
+      g.fillStyle=col; g.fill();
       g.strokeStyle='rgba(24,20,12,.60)'; g.lineWidth=1.6; g.stroke();
       g.strokeStyle=sunLit(.32); g.lineWidth=1;             // a rim, so the shield
       g.beginPath();                                        // lifts off the tabard
-      g.moveTo(sx-S*0.31,sy+S*0.34); g.lineTo(sx-S*0.31,sy-S*0.50);
-      g.lineTo(sx+S*0.31,sy-S*0.50); g.stroke();
-      if(K.gold){
-        g.fillStyle='#E8C15A';
-        g.fillRect(sx-S*0.07,sy-S*0.48,S*0.14,S*0.96);
-        g.fillRect(sx-S*0.30,sy-S*0.20,S*0.60,S*0.14);
-      }
+      g.moveTo(sx-S*0.31*k,sy+S*0.34*k); g.lineTo(sx-S*0.31*k,sy-S*0.50*k);
+      g.lineTo(sx+S*0.31*k,sy-S*0.50*k); g.stroke();
+    }
+    if(big&&K.gold){
+      g.fillStyle='#E8C15A';
+      g.fillRect(sx-S*0.07,sy-S*0.48,S*0.14,S*0.96);
+      g.fillRect(sx-S*0.30,sy-S*0.20,S*0.60,S*0.14);
     }
   }
 
@@ -9308,7 +9552,8 @@ function unitFigure(g,type,owner,x,top,pose,dir){
      Everything metal is laid down twice: a dark stroke first, then the bright
      one inside it. One pale line on a bright field is invisible at this size;
      a pale line with a dark keyline reads from across the map.              */
-  const hx=x+S*0.34+lunge*S*0.34, hy2=top+S*0.46-lunge*S*0.24;
+  const WG=wepGeom(K,S,lunge);
+  const hx=x+WG.hx, hy2=top+WG.hy;
   const HAFT='#7A5C36', DARK='#241D12', STEEL='#D3D9E0';
   const arm=(ax,ay)=>{ g.strokeStyle=K.shade; g.lineWidth=Math.max(2.2,S*0.22);
                        g.lineCap='round'; g.beginPath();
@@ -9336,7 +9581,7 @@ function unitFigure(g,type,owner,x,top,pose,dir){
 
   if(K.wep==='sword'){
     arm(hx,hy2);
-    const tx=hx+S*(0.54+lunge*0.54), ty=hy2-S*(0.74-lunge*0.66);
+    const tx=x+WG.tx, ty=top+WG.ty;
     shaft(hx,hy2,tx,ty,0.15,STEEL);
     g.strokeStyle='#4A3A24'; g.lineWidth=Math.max(2.6,S*0.20);   // crossguard
     g.lineCap='butt';
@@ -9346,13 +9591,13 @@ function unitFigure(g,type,owner,x,top,pose,dir){
     // Held upright. The point standing a head above the helmet is the whole
     // silhouette of a spear line, and it has to clear the men in front.
     const bx=hx-S*0.30, by=hy2+S*1.00;
-    const tx=hx+S*(0.34+lunge*0.62), ty=hy2-S*(2.05-lunge*0.90);
+    const tx=x+WG.tx, ty=top+WG.ty;
     arm(hx,hy2);
     shaft(bx,by,tx,ty,0.13,HAFT);
     head(bx,by,tx,ty,0.44,0.15);
   } else if(K.wep==='lance'){
     const bx=hx-S*0.95, by=hy2+S*0.34;
-    const tx=hx+S*(1.60+lunge*0.42), ty=hy2-S*(1.14-lunge*0.62);
+    const tx=x+WG.tx, ty=top+WG.ty;
     arm(hx,hy2);
     shaft(bx,by,tx,ty,0.17,HAFT);
     head(bx,by,tx,ty,0.40,0.13);
@@ -9429,7 +9674,64 @@ function unitFigure(g,type,owner,x,top,pose,dir){
 }
 
 // The fallen lie where they dropped and fade into the grass.
+// One piece of cloth, four shapes. A swallowtail, a long pennon, a square
+// banner and a gonfalon with two tails read differently at a hundred paces,
+// which is more than any two of these colours do. Drawn live off the pole so
+// it moves; the pole itself is baked.
+function cloth(g,px,py,L,owner,ph){
+  const fl=Math.sin(ph)*(L*0.19), f2=Math.sin(ph*1.37+1.1)*(L*0.12);
+  const H=L*0.62;
+  g.fillStyle=teamLight(owner);
+  g.beginPath();
+  switch(sigOf(owner).pennant){
+    case 'swallow':                                   // two points, a notch between
+      g.moveTo(px,py);
+      g.quadraticCurveTo(px+L*0.55,py+H*0.28+fl, px+L,py+H*0.10+fl);
+      g.lineTo(px+L*0.62,py+H*0.55+f2);
+      g.lineTo(px+L,py+H*1.02+fl);
+      g.quadraticCurveTo(px+L*0.55,py+H*1.16+fl, px,py+H*0.92);
+      break;
+    case 'pennon':                                    // long, narrow, tapering
+      g.moveTo(px,py);
+      g.quadraticCurveTo(px+L*0.7,py+H*0.34+fl, px+L*1.55,py+H*0.30+fl+f2);
+      g.quadraticCurveTo(px+L*0.7,py+H*0.62+fl, px,py+H*0.66);
+      break;
+    case 'gonfalon':                                  // hung square, two tails
+      g.moveTo(px,py);
+      g.quadraticCurveTo(px+L*0.5,py+H*0.10+fl, px+L*0.92,py+fl);
+      g.lineTo(px+L*0.92,py+H*0.82+fl);
+      g.lineTo(px+L*0.70,py+H*1.30+fl);
+      g.lineTo(px+L*0.52,py+H*0.86+f2);
+      g.lineTo(px+L*0.32,py+H*1.26+f2);
+      g.lineTo(px+L*0.14,py+H*0.84);
+      g.lineTo(px,py+H*0.86);
+      break;
+    default:                                          // square, and that is all
+      g.moveTo(px,py);
+      g.quadraticCurveTo(px+L*0.5,py+H*0.12+fl, px+L*0.90,py+fl);
+      g.quadraticCurveTo(px+L*0.5,py+H*0.98+fl, px,py+H*0.90);
+  }
+  g.closePath(); g.fill();
+  g.fillStyle='rgba(0,0,0,.20)';                      // the lee side of the fold
+  g.fillRect(px, py+H*0.12, Math.max(2,L*0.16), H*0.66);
+}
+
 function drawFallen(){
+  for(const q of wrecks){
+    if(q.owner!==PLAYER && visAt(q.x,q.y)===0) continue;
+    const x=q.tx*TILE-cam.x, y=q.ty*TILE-cam.y;
+    if(x<-300||y<-300||x>innerWidth+300||y>innerHeight+300) continue;
+    const rb=rubbleSprite(q.type);
+    ctx.globalAlpha=Math.min(1, q.t/1.8);          // and the grass takes it back
+    blit(rb, x-rb.ox, y-rb.oy);
+    const p=(q.life-q.t)/0.75;                     // the fall itself
+    if(p<1){
+      const sp=bldSprite(q.type,q.owner,3,q.v);
+      ctx.globalAlpha=(1-p)*(1-p);
+      blit(sp, x-sp.ox, y-sp.oy+p*8);
+    }
+    ctx.globalAlpha=1;
+  }
   for(const q of fallen){
     const p=q.t/q.life, x=q.x-cam.x, y=q.y-cam.y;
     if(x<-60||y<-60||x>innerWidth+60||y>innerHeight+60) continue;
@@ -9559,6 +9861,40 @@ function drawUnit(u){
       ctx.drawImage(bs.c, Math.round(-bs.ox), Math.round(top-bs.oy-gy), bs.w, bs.h);
       ctx.restore();
     } else blit(bs, x-bs.ox, top-bs.oy);
+
+    // The line the weapon took. Only on the frames it is actually moving, and
+    // only for the arms that move that way: a blade sweeps, a lance sweeps
+    // wider off a horse, a spear does not sweep at all - it goes in straight.
+    // A bow has its arrow and a tool is work, so neither gets one.
+    if(pose>=6 && u.swing>0){
+      const K=unitKit(u.type), fd=(Math.cos(u.face)<0)?-1:1;
+      const fade=Math.min(1, u.swing*6);
+      const A=wepGeom(K,S,LUNGE_WIND), B=wepGeom(K,S,LUNGE_STRIKE);
+      ctx.save();
+      ctx.translate(x,top); ctx.scale(fd,1);
+      ctx.lineCap='round';
+      ctx.strokeStyle='rgba(234,240,248,'+(0.46*fade).toFixed(2)+')';
+      ctx.lineWidth=2.4;
+      ctx.beginPath();
+      if(K.wep==='sword'){
+        // A blade sweeps: it turns about the hand, so the streak is the arc the
+        // point actually travelled, not a line between where it started and
+        // where it stopped.
+        const r=Math.hypot(B.tx-B.hx, B.ty-B.hy);
+        ctx.arc(B.hx, B.hy, r,
+                Math.atan2(A.ty-A.hy, A.tx-A.hx), Math.atan2(B.ty-B.hy, B.tx-B.hx));
+        ctx.stroke();
+      } else if(K.wep==='spear'||K.wep==='lance'){
+        // A spear and a lance do not sweep. They go in.
+        ctx.moveTo(A.tx, A.ty); ctx.lineTo(B.tx, B.ty); ctx.stroke();
+        ctx.strokeStyle='rgba(255,255,255,'+(0.30*fade).toFixed(2)+')';
+        ctx.lineWidth=1;
+        ctx.beginPath();
+        ctx.moveTo(A.tx+(B.tx-A.tx)*0.45, A.ty+(B.ty-A.ty)*0.45);
+        ctx.lineTo(B.tx, B.ty); ctx.stroke();
+      }
+      ctx.lineCap='butt'; ctx.restore();
+    }
 
     // What he is carrying home rides above the shoulder, where nothing else
     // in the figure competes with it.
@@ -10486,7 +10822,7 @@ function restore(snap){
   stats=snap.stats;
   objDone=Object.create(null); for(const k of snap.obj) objDone[k]=true;
   desAI(snap); cam={x:snap.cam.x,y:snap.cam.y};
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
   hist=snap.hist||[]; histAt=gameTime+8;
   autosaveAt=gameTime+45;
 
@@ -11631,7 +11967,7 @@ document.getElementById('chronCount').textContent='0 / '+OBJECTIVES.length;
 ents=[]; nextId=1; sides=HOUSE.map((h,i)=>newSide(i));
 stats={gathered:0,gath:{f:0,w:0,g:0},trained:0,soldiers:0,killed:0,razed:0,techs:0,trades:0,lost:0,fish:0,guard:0};
 objDone=Object.create(null); groups=Object.create(null);
-shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
+shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
 running=false; paused=false; ended=false;
 aiReset();
 setMapSize(mapSize); genMap();
