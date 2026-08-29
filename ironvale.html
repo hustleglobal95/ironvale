@@ -1205,6 +1205,7 @@ function touchLists(){ listsDirty=true; }
 function lists(){
   if(!listsDirty) return;
   listsDirty=false;
+  pathsDirty=true;
   bldCache.length=0; unitCache.length=0; liveCache.length=0;
   for(const e of ents){
     if(e.dead) continue;
@@ -6188,6 +6189,21 @@ function draw(){
   // entity: it draws under everything, and a real field laid on a slot simply
   // covers it.
   lists();
+  // Worn ground first, then the tracks over it, then the shadows the buildings
+  // throw onto both. All three are terrain: they go under every entity, and a
+  // field or a unit laid on top simply covers them.
+  for(const b of bldCache){
+    if(b.dead||b.type==='plot') continue;
+    if(b.owner!==PLAYER && !knows(b)) continue;
+    const bw=b.w*TILE, bh=b.h*TILE;
+    const sp=siteSprite(b.type,bw,bh,(b.id>>1)&1,seasonNow);
+    if(!sp) continue;
+    const sx=b.tx*TILE-cam.x, sy=b.ty*TILE-cam.y;
+    if(sx<-320||sy<-320||sx>W+320||sy>H+320) continue;
+    ctx.globalAlpha=b.building?0.45:1;
+    blit(sp, sx-sp.ox, sy-sp.oy);
+    ctx.globalAlpha=1;
+  }
   for(const f of bldCache){
     if(f.type!=='farm'||f.dead) continue;
     if(f.owner!==PLAYER && !knows(f)) continue;
@@ -6203,6 +6219,17 @@ function draw(){
     ctx.globalAlpha=1;
   }
 
+  drawPaths(W,H);
+  for(const b of bldCache){
+    if(b.dead||b.type==='plot'||b.building) continue;
+    if(b.owner!==PLAYER && !knows(b)) continue;
+    const bw=b.w*TILE, bh=b.h*TILE;
+    const sx=b.tx*TILE-cam.x, sy=b.ty*TILE-cam.y;
+    if(sx<-260||sy<-260||sx>W+260||sy>H+260) continue;
+    const rise=Math.round(bh + bw*formOf(b.type).pitch);
+    const sh=shadowSprite(bw,bh,rise);
+    blit(sh, sx-sh.ox, sy-sh.oy);
+  }
   const vsb=[];
   for(const e of ents){
     const sx=e.x-cam.x, sy=e.y-cam.y;
@@ -6783,12 +6810,414 @@ function farmVariant(b){
 // slots a steading owns. It is one cached sprite, drawn once per steading, so a
 // dozen farms cost a dozen blits rather than a thousand furrows.
 const APRON_SLOTS=1;                       // rings of field slots the apron covers
+/* ---- the ground a building stands on --------------------------------------
+   A building that sits on unbroken meadow reads as a picture laid over the
+   map. Real ground around a real building is worn: the grass in front of a
+   barracks is gone, a mill has spilt grain and cartwheel ruts, a smith has
+   clinker trodden into the mud, and the edge of all of it is ragged because
+   feet made it, not a surveyor. That worn ground is terrain - it is drawn
+   under everything, before any building - and it is the single thing that
+   plants a structure in the world.                                         */
+const SITE={
+  tc:      {kind:'paved',   out:22, wear:0.92},
+  house:   {kind:'yard',    out:11, wear:0.42},
+  mill:    {kind:'soil',    out:16, wear:0.78},
+  granary: {kind:'soil',    out:15, wear:0.72},
+  lumber:  {kind:'spoil',   out:17, wear:0.86, chip:'wood'},
+  mining:  {kind:'spoil',   out:17, wear:0.88, chip:'stone'},
+  barracks:{kind:'trample', out:19, wear:0.94},
+  range:   {kind:'trample', out:19, wear:0.90},
+  stable:  {kind:'trample', out:20, wear:0.95},
+  siege:   {kind:'trample', out:19, wear:0.92},
+  smith:   {kind:'trample', out:16, wear:0.90, chip:'clinker'},
+  market:  {kind:'paved',   out:19, wear:0.85},
+  uni:     {kind:'paved',   out:16, wear:0.70},
+  // A dock stands half in the water. Worn earth painted across a shoreline
+  // reads worse than no worn earth at all, so it gets none.
+  dock:    {kind:'none',    out:0,  wear:0},
+  tower:   {kind:'trample', out:12, wear:0.70},
+  castle:  {kind:'paved',   out:18, wear:0.88},
+  camp:    {kind:'trample', out:17, wear:0.90},
+  farm:    {kind:'none',    out:0,  wear:0},
+  plot:    {kind:'none',    out:0,  wear:0},
+  standard:{kind:'trample', out:12, wear:0.60},
+  palisade:{kind:'none',    out:0,  wear:0},
+  stonewall:{kind:'none',   out:0,  wear:0},
+  gate:    {kind:'trample', out:13, wear:0.85}
+};
+const SITE_DEF={kind:'yard', out:16, wear:0.55};
+const siteOf=t=>SITE[t]||SITE_DEF;
+const SITE_EARTH={
+  soil:   ['#9C7642','#B08A52','#7E5C30'],
+  trample:['#968A6C','#A79B7C','#786C50'],
+  paved:  ['#A79E85','#B6AE96','#867E66'],
+  yard:   ['#928C60','#A29C70','#736E48'],
+  spoil:  ['#95876A','#A5977A','#77694E']
+};
+// One deterministic stream per site, so a given building's ground is the same
+// ground every time it is baked and never crawls between frames.
+function siteRnd(seed){
+  let x=(seed*2654435761)>>>0;
+  return ()=>{ x^=x<<13; x>>>=0; x^=x>>17; x^=x<<5; x>>>=0; return x/4294967296; };
+}
+
+function siteSprite(type,w,h,v,season){
+  const S=siteOf(type);
+  if(S.kind==='none') return null;
+  // Deeper below the footprint than above it. Almost all of the ground behind
+  // a building is hidden by the building; the ground that gets looked at is
+  // the strip in front of the door, so that is where the patch has to be.
+  const out=S.out, W=w+out*2, H=h+out*2+Math.round(out*0.9);
+  return sprite('site|'+S.kind+'|'+w+'|'+h+'|'+out+'|'+(S.chip||'-')+'|'+v+'|'+season,
+                W, H, (g)=>siteGround(g,S,w,h,out,W,H,v), {ox:out, oy:out});
+}
+
+function siteGround(g,S,w,h,out,W,H,v){
+  const R=siteRnd(1013+w*7+h*13+out*29+v*104729+(S.kind.charCodeAt(0)*31));
+  const cx=W/2, cy=out+h/2+out*0.34;
+  const E=SITE_EARTH[S.kind]||SITE_EARTH.yard;
+  const rgba=(c,a)=>'rgba('+hexRGB(c).join(',')+','+a+')';
+  // The outline of the worn ground. A superellipse follows the footprint
+  // rather than being a circle stamped on it, and every vertex is pushed in or
+  // out a little, because feet made this edge and not a surveyor.
+  const N=26, pts=[];
+  for(let i=0;i<N;i++){
+    const a=i/N*6.283, ca=Math.cos(a), sa=Math.sin(a);
+    const k=Math.pow(Math.pow(Math.abs(ca),3.2)+Math.pow(Math.abs(sa),3.2), -1/3.2);
+    const j=0.78+R()*0.40;
+    const ry=(sa>0 ? h/2+out*1.30 : h/2+out*0.44);
+    pts.push([cx+ca*k*(w/2+out*0.92)*j, cy+sa*k*ry*j]);
+  }
+  const trace=(k)=>{
+    g.beginPath();
+    for(let i=0;i<=N;i++){
+      const p=pts[i%N], q=pts[(i+1)%N];
+      const mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
+      if(i) g.quadraticCurveTo(cx+(p[0]-cx)*k, cy+(p[1]-cy)*k, cx+(mx-cx)*k, cy+(my-cy)*k);
+      else  g.moveTo(cx+(mx-cx)*k, cy+(my-cy)*k);
+    }
+    g.closePath();
+  };
+  g.save();
+  trace(1.06); g.clip();
+  // Earth laid down as a gradient, not a fill. The ground is bare where the
+  // traffic is and untouched at the rim, and nothing anywhere has an edge -
+  // an opaque patch of brown with a boundary is exactly the sticker this is
+  // meant to get rid of.
+  const peak=0.50+S.wear*0.44;
+  const gr=g.createRadialGradient(cx, cy+h*0.18, Math.min(w,h)*0.26,
+                                  cx, cy+h*0.12, Math.max(W,H)*0.52);
+  gr.addColorStop(0,    rgba(E[0], peak.toFixed(2)));
+  gr.addColorStop(0.55, rgba(E[0], (peak*0.88).toFixed(2)));
+  gr.addColorStop(0.82, rgba(E[0], (peak*0.42).toFixed(2)));
+  gr.addColorStop(1,    rgba(E[0], 0));
+  g.fillStyle=gr; g.fillRect(0,0,W,H);
+  g.save();
+  trace(0.86); g.clip();                       // marks keep off the soft rim
+  const gp=grainPat(g,'turf',64,9,GRAIN_DARK,GRAIN_LIGHT,0.13);
+  if(gp){ g.fillStyle=gp; g.fillRect(0,0,W,H); }
+  g.fillStyle=rgba(E[1], 0.16); g.fillRect(0,0,W,H);
+
+  if(S.kind==='soil'){
+    for(let y=(R()*6|0); y<H; y+=7){                       // ridge and furrow
+      g.fillStyle='rgba(58,40,20,.16)';   g.fillRect(0,y,W,2.4);
+      g.fillStyle='rgba(206,170,110,.13)'; g.fillRect(0,y+2.4,W,1.2);
+    }
+  } else if(S.kind==='paved'){
+    // Laid where they can be seen: in front of the door, not under the walls.
+    for(let y=cy-h*0.10; y<cy+h*0.80; y+=9){
+      for(let x=cx-w*0.50; x<cx+w*0.50; x+=13){
+        const jx=x+R()*3, jy=y+R()*2;
+        const d=Math.hypot(jx-cx,(jy-cy-h*0.34)*1.4)/(w*0.62);
+        if(R()<d*0.95) continue;
+        g.fillStyle='rgba(196,190,170,'+(0.18+R()*0.22).toFixed(2)+')';
+        g.fillRect(jx, jy, 10+R()*2, 6+R()*1.5);
+        g.fillStyle='rgba(70,64,48,.16)';
+        g.fillRect(jx, jy+6+R()*1.5, 10, 1.4);
+      }
+    }
+  } else if(S.kind==='spoil'){
+    for(let i=0;i<30;i++){                                  // chips and spoil
+      const a=R()*6.283, rr=Math.sqrt(R());
+      const x=cx+Math.cos(a)*rr*(w/2+out*0.7), y=cy+Math.sin(a)*rr*(h/2+out*0.7);
+      if(S.chip==='wood'){
+        g.fillStyle='rgba(206,170,108,'+(0.26+R()*0.34).toFixed(2)+')';
+        g.save(); g.translate(x,y); g.rotate(R()*3.14);
+        g.fillRect(-2.6,-1,5.2,2); g.restore();
+      } else {
+        g.fillStyle='rgba(138,132,116,'+(0.26+R()*0.34).toFixed(2)+')';
+        g.beginPath(); g.ellipse(x,y,1.6+R()*2.2,1.2+R()*1.4,0,0,6.283); g.fill();
+      }
+    }
+  } else if(S.kind==='trample'){
+    for(let i=0;i<24;i++){                                  // boot marks in the mud
+      const a=R()*6.283, rr=Math.sqrt(R());
+      const x=cx+Math.cos(a)*rr*(w/2+out*0.75), y=cy+Math.sin(a)*rr*(h/2+out*0.75);
+      g.fillStyle='rgba(56,44,28,'+(0.07+R()*0.10).toFixed(2)+')';
+      g.save(); g.translate(x,y); g.rotate(R()*0.9-0.45);
+      g.beginPath(); g.ellipse(0,0,2.6+R()*1.4,1.5,0,0,6.283); g.fill();
+      g.restore();
+    }
+    if(S.chip==='clinker') for(let i=0;i<18;i++){
+      const x=cx+(R()-0.5)*(w+out), y=cy+(R()-0.5)*(h+out);
+      g.fillStyle='rgba(34,28,22,'+(0.22+R()*0.28).toFixed(2)+')';
+      g.beginPath(); g.ellipse(x,y,1+R()*1.6,0.9+R(),0,0,6.283); g.fill();
+    }
+  }
+  for(let i=0;i<8;i++){                                     // and it keeps its stones
+    const x=cx+(R()-0.5)*(w+out*1.2), y=cy+(R()-0.5)*(h+out*1.2);
+    g.fillStyle='rgba(136,130,112,'+(0.16+R()*0.20).toFixed(2)+')';
+    g.beginPath(); g.ellipse(x,y,1.4+R()*1.8,1.0+R()*1.2,0,0,6.283); g.fill();
+    g.fillStyle=sunLit(.09);
+    g.beginPath(); g.ellipse(x-0.6,y-0.6,0.9+R(),0.6+R()*0.6,0,0,6.283); g.fill();
+  }
+  g.restore();
+  siteProps(g,S,R,cx,cy,w,h,out);
+  g.restore();
+  // Tufts that survived, standing over the edge of the bare ground. Drawn
+  // outside the clip on purpose: they are what stops the patch having an edge
+  // at all.
+  const gcol=GRASS[1], gdark=GRASS[0];
+  for(let i=0;i<N*3;i++){
+    const t=i/(N*3)*6.283, ci=Math.cos(t), si=Math.sin(t);
+    const k=Math.pow(Math.pow(Math.abs(ci),3.2)+Math.pow(Math.abs(si),3.2), -1/3.2);
+    const j=0.88+R()*0.24;
+    const ry=(si>0 ? h/2+out*1.30 : h/2+out*0.44);
+    const x=cx+ci*k*(w/2+out*0.92)*j, y=cy+si*k*ry*j;
+    g.strokeStyle=(R()<0.5?gcol:gdark);
+    g.lineWidth=1.1; g.lineCap='round';
+    for(let b=0;b<2;b++){
+      const lean=(R()-0.5)*2.4;
+      g.beginPath(); g.moveTo(x+b*1.6-0.8, y+1);
+      g.lineTo(x+b*1.6-0.8+lean, y+1-(2.2+R()*2.2)); g.stroke();
+    }
+  }
+  g.lineCap='butt';
+}
+
+// What gets left lying about. Only ever in the strip in front of the building
+// and along its flanks, because anything behind it is never seen, and never
+// more than three things: a yard with clutter all over it reads as a bin.
+function siteProps(g,S,R,cx,cy,w,h,out){
+  const spots=[[-w*0.46-out*0.30, h*0.34],[w*0.46+out*0.30, h*0.26],
+               [-w*0.20, h*0.52+out*0.34],[w*0.24, h*0.56+out*0.30]];
+  const barrel=(x,y,r)=>{
+    g.fillStyle='rgba(20,16,10,.26)';
+    g.beginPath(); g.ellipse(x+1.6,y+1,r*1.1,r*0.44,0,0,6.283); g.fill();
+    g.fillStyle='#6B4C2E'; g.fillRect(x-r,y-r*2.0,r*2,r*2.0);
+    g.fillStyle=sunLit(.14); g.fillRect(x-r,y-r*2.0,r*0.66,r*2.0);
+    g.fillStyle='#4E4438'; g.fillRect(x-r,y-r*1.6,r*2,1.2); g.fillRect(x-r,y-r*0.7,r*2,1.2);
+    g.fillStyle='#7A5936';
+    g.beginPath(); g.ellipse(x,y-r*2.0,r,r*0.42,0,0,6.283); g.fill();
+  };
+  const crate=(x,y,k)=>{
+    g.fillStyle='rgba(20,16,10,.24)';
+    g.beginPath(); g.ellipse(x+1.4,y+1,k*0.62,k*0.24,0,0,6.283); g.fill();
+    g.fillStyle='#7A6038'; g.fillRect(x-k/2,y-k,k,k);
+    g.fillStyle=sunLit(.12); g.fillRect(x-k/2,y-k,k*0.34,k);
+    g.strokeStyle='rgba(40,28,16,.5)'; g.lineWidth=1;
+    g.strokeRect(x-k/2+0.5,y-k+0.5,k-1,k-1);
+  };
+  const woodpile=(x,y)=>{
+    g.fillStyle='rgba(20,16,10,.24)';
+    g.beginPath(); g.ellipse(x+2,y+1,12,4,0,0,6.283); g.fill();
+    for(let r=0;r<2;r++) for(let i=0;i<3-r;i++){
+      const lx=x-8+r*4+i*8, ly=y-3-r*5;
+      g.fillStyle='#6E4E2C';
+      g.beginPath(); g.ellipse(lx,ly,4,3.6,0,0,6.283); g.fill();
+      g.fillStyle='#A8834E';
+      g.beginPath(); g.ellipse(lx-0.7,ly-0.5,2.3,2.1,0,0,6.283); g.fill();
+    }
+  };
+  const stones=(x,y)=>{
+    for(let i=0;i<5;i++){
+      const jx=x+(R()-0.5)*16, jy=y+(R()-0.5)*7;
+      g.fillStyle='rgba(20,16,10,.20)';
+      g.beginPath(); g.ellipse(jx+1,jy+1.4,3.4,1.4,0,0,6.283); g.fill();
+      g.fillStyle='#8C8676';
+      g.beginPath(); g.ellipse(jx,jy,2.6+R()*1.6,2.0+R(),0,0,6.283); g.fill();
+      g.fillStyle=sunLit(.18);
+      g.beginPath(); g.ellipse(jx-0.8,jy-0.8,1.4,0.9,0,0,6.283); g.fill();
+    }
+  };
+  const rack=(x,y)=>{                                   // a rail with spears on it
+    g.strokeStyle='#5E4728'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-9,y); g.lineTo(x-9,y-9); g.moveTo(x+9,y); g.lineTo(x+9,y-9);
+    g.moveTo(x-10,y-8); g.lineTo(x+10,y-8); g.stroke();
+    g.strokeStyle='#7A5C36'; g.lineWidth=1.4;
+    for(let i=0;i<4;i++){ const sx2=x-6+i*4;
+      g.beginPath(); g.moveTo(sx2,y); g.lineTo(sx2+1.6,y-15); g.stroke(); }
+  };
+  const trough=(x,y)=>{
+    g.fillStyle='rgba(20,16,10,.24)';
+    g.beginPath(); g.ellipse(x+1.6,y+1,11,3.4,0,0,6.283); g.fill();
+    g.fillStyle='#6B5233'; g.fillRect(x-10,y-6,20,6);
+    g.fillStyle='#4E8FA8'; g.fillRect(x-8.6,y-5,17.2,2.2);
+    g.fillStyle=sunLit(.14); g.fillRect(x-10,y-6,20,1.4);
+  };
+  const sacks=(x,y)=>{
+    for(let i=0;i<2;i++){
+      const sx2=x-5+i*10;
+      g.fillStyle='rgba(20,16,10,.22)';
+      g.beginPath(); g.ellipse(sx2+1,y+1,5.6,2.2,0,0,6.283); g.fill();
+      g.fillStyle='#C4B389';
+      g.beginPath(); g.ellipse(sx2,y-4.6,5,5.4,0,0,6.283); g.fill();
+      g.fillStyle='rgba(255,250,224,.16)';
+      g.beginPath(); g.ellipse(sx2-1.4,y-6,2.2,2.6,0,0,6.283); g.fill();
+    }
+  };
+  const menu = S.kind==='soil'    ? [sacks, woodpile, crate]
+             : S.kind==='spoil'   ? (S.chip==='wood' ? [woodpile, crate, woodpile] : [stones, crate, stones])
+             : S.kind==='trample' ? (S.chip==='clinker' ? [barrel, stones, crate] : [rack, trough, barrel])
+             : S.kind==='paved'   ? [crate, barrel, sacks]
+                                  : [woodpile, barrel, crate];
+  const n=1+(R()*2.2|0);
+  const used=[];
+  for(let i=0;i<n;i++){
+    let k=(R()*spots.length)|0, tries=0;
+    while(used.indexOf(k)>=0 && tries++<6) k=(k+1)%spots.length;
+    used.push(k);
+    const sp=spots[k];
+    const f=menu[(R()*menu.length)|0];
+    const x=cx+sp[0]+(R()-0.5)*8, y=cy+sp[1]+(R()-0.5)*6;
+    if(f===barrel) barrel(x,y,4+R()*1.6);
+    else if(f===crate) crate(x,y,9+R()*3);
+    else f(x,y);
+  }
+}
+
+/* ---- the cast shadow ------------------------------------------------------
+   The old shadow was a small ellipse tucked under the base, which reads as a
+   sticker with a smudge behind it. A building this size throws a shadow the
+   length of itself, away from the sun, hard at the wall and soft at the far
+   end. It is baked per footprint and blitted, so it costs one draw.        */
+function shadowSprite(w,h,rise){
+  const dx=Math.round(LIGHT.ox*rise*0.50), dy=Math.round(LIGHT.oy*rise*0.22);
+  const pad=20, W=w+dx+pad*2, H=h+dy+pad*2;
+  return sprite('shadow|'+w+'|'+h+'|'+rise, W, H, (g)=>{
+    const x0=pad, y0=pad, base=y0+h-2;
+    // The pool the mass sits in, pushed away from the sun rather than centred
+    // under the middle of the building. Three passes at falling alpha stand in
+    // for a soft edge, which canvas will not give for free.
+    const pool=(k,a)=>{
+      g.fillStyle='rgba('+LIGHT.deep+','+a+')';
+      g.beginPath();
+      g.ellipse(x0+w/2+dx*k*0.42, base+dy*k*0.30,
+                w*0.50*(1+0.13*k), (h*0.15+7)*(1+0.16*k), 0, 0, 6.283);
+      g.fill();
+    };
+    pool(1.7, 0.05); pool(1.0, 0.09); pool(0.42, 0.13);
+    // and the wall's own cast, thrown out sideways: a wedge that starts at the
+    // foot of the wall and runs out to the length of the building's height.
+    const wedge=(k,a)=>{
+      g.fillStyle='rgba('+LIGHT.deep+','+a+')';
+      g.beginPath();
+      g.moveTo(x0+w*0.10,        base-h*0.10);
+      g.quadraticCurveTo(x0+w*0.55+dx*k*0.5, base-h*0.16+dy*k*0.4,
+                         x0+w*0.86+dx*k,     base-h*0.02+dy*k);
+      g.quadraticCurveTo(x0+w*0.70+dx*k*0.8, base+6+dy*k,
+                         x0+w*0.42,          base+8);
+      g.closePath(); g.fill();
+    };
+    wedge(1.35, 0.05); wedge(0.95, 0.08); wedge(0.55, 0.10);
+    // The line where the wall goes into the ground. This is the darkest thing
+    // in the picture and it is what actually sits the building down.
+    const gr=g.createLinearGradient(0, base-8, 0, base+8);
+    gr.addColorStop(0,'rgba('+LIGHT.deep+',0)');
+    gr.addColorStop(0.50,'rgba('+LIGHT.deep+',0.42)');
+    gr.addColorStop(1,'rgba('+LIGHT.deep+',0)');
+    g.fillStyle=gr; g.fillRect(x0-2, base-8, w+4, 16);
+  }, {ox:pad, oy:pad});
+}
+
+/* ---- the tracks between them ---------------------------------------------
+   Nobody walks in a straight line and nobody walks nowhere. Every building a
+   settlement owns has a track worn from its door to the town it belongs to,
+   and where two of those run together the ground between the buildings joins
+   up on its own.                                                           */
+let PATHS=[], pathsDirty=true;
+const NO_PATH={plot:1, palisade:1, stonewall:1, gate:1, standard:1, camp:1, farm:0};
+function buildPaths(){
+  PATHS.length=0;
+  const hubs=[];
+  for(const b of bldCache) if(b.type==='tc'&&!b.dead) hubs.push(b);
+  for(const b of bldCache){
+    if(b.dead||b.type==='tc'||NO_PATH[b.type]) continue;
+    let best=null, bd=1e9;
+    for(const hn of hubs){
+      if(hn.owner!==b.owner) continue;
+      const d=Math.hypot(hn.x-b.x, hn.y-b.y);
+      if(d<bd){ bd=d; best=hn; }
+    }
+    if(!best || bd>560) continue;
+    const ax=b.x, ay=b.y+b.h*TILE*0.40;
+    // Stop at the edge of the town's own yard rather than at its middle, or
+    // every track in the settlement meets at one point and the whole thing
+    // reads as a starburst drawn on the grass.
+    const ux=(b.x-best.x)/bd, uy=(b.y-best.y)/bd;
+    const bx=best.x+ux*best.w*TILE*0.52, by=best.y+uy*best.h*TILE*0.40+best.h*TILE*0.22;
+    // Bow the track sideways by a fixed amount taken from the building's id,
+    // so it is never a ruled line and never twitches.
+    const bow=(((b.id*2654435761)>>>0)%100/100-0.5)*Math.min(30, bd*0.12);
+    PATHS.push({ax, ay, bx, by, bow,
+                w:b.type==='market'||b.type==='mill'?11:8, o:b.owner});
+  }
+}
+// A track is baked once as a straight band with its bow in it and then blitted
+// under a rotation. Drawn live it is four wide gradient strokes per track per
+// frame, and forty of those cost a fifth of the frame rate on their own; baked,
+// it is one transform and one blit.
+function pathSprite(len,wid,bow){
+  const L=Math.max(24, Math.round(len/10)*10);
+  const B=Math.round(bow/5)*5;
+  // A quadratic with its control point at 2B passes through B, so the band only
+  // ever needs room for B - twice that is twice the transparent pixels to blend
+  // on every frame, for nothing.
+  const H=Math.abs(B)+wid+22;
+  const cy=B>0 ? Math.round(wid/2+11) : Math.round(H-wid/2-11);
+  return sprite('path|'+L+'|'+wid+'|'+B, L, H, (g)=>{
+    const band=(col,a1,lw,dx,dy)=>{
+      const gr=g.createLinearGradient(0,0,L,0);
+      gr.addColorStop(0,   'rgba('+col+',0)');
+      gr.addColorStop(0.16,'rgba('+col+','+a1+')');
+      gr.addColorStop(0.84,'rgba('+col+','+a1+')');
+      gr.addColorStop(1,   'rgba('+col+',0)');
+      g.strokeStyle=gr; g.lineWidth=lw; g.lineCap='round';
+      g.beginPath();
+      g.moveTo(dx, cy+dy);
+      g.quadraticCurveTo(L/2+dx, cy+B*2+dy, L+dx, cy+dy);
+      g.stroke();
+    };
+    band('158,144,110', 0.14, wid+8, 0, 0);
+    band('166,152,116', 0.22, wid,   0, 0);
+    band('186,172,134', 0.16, wid*0.40, 0, -1.5);
+    band('78,64,42',    0.09, 1.4,  0, -wid*0.30);
+    band('78,64,42',    0.09, 1.4,  0,  wid*0.30);
+    g.lineCap='butt';
+  }, {ox:0, oy:cy});
+}
+function drawPaths(W,H){
+  if(pathsDirty){ buildPaths(); pathsDirty=false; }
+  for(const p of PATHS){
+    const ax=p.ax-cam.x, ay=p.ay-cam.y, bx=p.bx-cam.x, by=p.by-cam.y;
+    if(Math.max(ax,bx)<-90||Math.max(ay,by)<-90||Math.min(ax,bx)>W+90||Math.min(ay,by)>H+90) continue;
+    const len=Math.hypot(bx-ax, by-ay);
+    if(len<24) continue;
+    const sp=pathSprite(len, p.w, p.bow);
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(Math.atan2(by-ay, bx-ax));
+    ctx.drawImage(sp.c, 0, -sp.oy, len, sp.h);
+    ctx.restore();
+  }
+}
+
 function apronSprite(){
   // Exactly the extent of the lattice it stands for: the slots reach
   // APRON_SLOTS rings out in each direction and each slot is a field wide, so
   // the ground drawn and the ground that can be built on are the same square.
   const side=(APRON_SLOTS*2*FIELD_PITCH+2)*TILE;
-  return sprite('apron|'+side, side, side, (g,w,h)=>{
+  return sprite('apron|'+side+'|'+seasonNow, side, side, (g,w,h)=>{
     const cx=w/2, cy=h/2;
     // A soft-edged square of turned earth rather than a hard rectangle, so it
     // sits in the grass instead of being stamped onto it.
@@ -6845,6 +7274,41 @@ function apronSprite(){
     g.strokeStyle='rgba(190,176,120,.30)'; g.lineWidth=TILE*0.5;
     g.strokeRect(pad+TILE*0.25, pad+TILE*0.25, w-2*pad-TILE*0.5, h-2*pad-TILE*0.5);
     g.restore();
+    // The apron has to cover every slot that can be built on, so its core is a
+    // square and cannot be anything else. What it must not have is the EDGE of
+    // a square: broken ground scuffs outward where the plough turned, and the
+    // grass comes back into it rather than stopping at a line.
+    const R=siteRnd(90210);
+    const L=pad, T=pad, Rr=w-pad, B=h-pad;
+    for(let i=0;i<130;i++){
+      const e=(R()*4)|0, t=R();
+      let x,y;
+      if(e===0){ x=L+t*(Rr-L); y=T; } else if(e===1){ x=L+t*(Rr-L); y=B; }
+      else if(e===2){ x=L; y=T+t*(B-T); } else { x=Rr; y=T+t*(B-T); }
+      const ox=(e===2?-1:e===3?1:0), oy=(e===0?-1:e===1?1:0);
+      const d=R()*11;
+      g.fillStyle='rgba(150,116,64,'+(0.42*(1-d/12)).toFixed(2)+')';
+      g.beginPath();
+      g.ellipse(x+ox*d+(R()-0.5)*7, y+oy*d+(R()-0.5)*7, 3+R()*5, 2.4+R()*3.4, 0,0,6.283);
+      g.fill();
+    }
+    for(let i=0;i<110;i++){
+      const e=(R()*4)|0, t=R();
+      let x,y;
+      if(e===0){ x=L+t*(Rr-L); y=T; } else if(e===1){ x=L+t*(Rr-L); y=B; }
+      else if(e===2){ x=L; y=T+t*(B-T); } else { x=Rr; y=T+t*(B-T); }
+      const d=(R()-0.35)*13;
+      const ox=(e===2?-1:e===3?1:0), oy=(e===0?-1:e===1?1:0);
+      const gx=x+ox*d+(R()-0.5)*6, gy=y+oy*d+(R()-0.5)*6;
+      g.strokeStyle=(R()<0.5?GRASS[1]:GRASS[0]);
+      g.lineWidth=1.1; g.lineCap='round';
+      for(let bl=0;bl<2;bl++){
+        const lean=(R()-0.5)*2.6;
+        g.beginPath(); g.moveTo(gx+bl*1.6-0.8, gy+1);
+        g.lineTo(gx+bl*1.6-0.8+lean, gy+1-(2.2+R()*2.6)); g.stroke();
+      }
+    }
+    g.lineCap='butt';
   });
 }
 
@@ -6988,7 +7452,9 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
   // A field is flat ground and throws nothing; everything else stands up and
   // casts. Giving a crop plot a building's shadow put a dark oval under every
   // one of them and broke the block back apart into separate tiles.
-  if(type!=='plot') contactShadow(g, px+w/2, py+h-2, w*0.54, 8, 0.34);
+  // The shadow this thing throws is drawn on the terrain, under the paths and
+  // the worn ground, not baked into the sprite - a shadow that travels with
+  // the picture is what made every building look pasted on.
 
   if(type==='palisade'||type==='stonewall'||type==='gate'){
     rampartBody(g,type,owner,px,py,w,h,tier); return;
@@ -7371,8 +7837,21 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
   // the outline is what was drawing a grid over a block of them and stopping
   // neighbouring fields from reading as one worked piece of land.
   if(!isFarm){
-    g.strokeStyle=deepAO(.55); g.lineWidth=1;
-    g.strokeRect(px+2.5, wallTop+0.5, w-5, (py+h)-wallTop-3);
+    // No box. A crisp rectangle drawn all the way round a wall is exactly what
+    // makes a building read as an illustration laid on the grass, and it was
+    // the loudest line in the picture. What a wall actually shows is a dark
+    // corner where it turns away from the light, and a dark foot where it goes
+    // into the ground - both fading out rather than stopping.
+    const wb=(py+h)-3, wt=wallTop;
+    const cL=g.createLinearGradient(px+2, 0, px+9, 0);
+    cL.addColorStop(0,'rgba(26,22,14,.34)'); cL.addColorStop(1,'rgba(26,22,14,0)');
+    g.fillStyle=cL; g.fillRect(px+2, wt, 7, wb-wt);
+    const cR=g.createLinearGradient(px+w-9, 0, px+w-2, 0);
+    cR.addColorStop(0,'rgba(26,22,14,0)'); cR.addColorStop(1,'rgba(26,22,14,.40)');
+    g.fillStyle=cR; g.fillRect(px+w-9, wt, 7, wb-wt);
+    const fb=g.createLinearGradient(0, wb-7, 0, wb+1);
+    fb.addColorStop(0,'rgba(20,16,10,0)'); fb.addColorStop(1,'rgba(20,16,10,.42)');
+    g.fillStyle=fb; g.fillRect(px+2, wb-7, w-4, 8);
   }
   // A field carries its crop and its stage in `tier`, not a damage state, and
   // there is no such thing as a burning furrow. Everything else takes its
