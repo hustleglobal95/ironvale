@@ -5556,6 +5556,42 @@ const GRAIN_DARK=[28,38,54], GRAIN_LIGHT=[255,246,212];
 // Trades hang a sign; keeps, towers and camps do not.
 const SIGNED={mill:1, lumber:1, mining:1, smith:1, market:1, uni:1, range:1, stable:1, siege:1, barracks:1, dock:1, farm:1, granary:1};
 const CHIMNEY={tc:0.24, house:0.28, mill:0.30, smith:0.70, barracks:0.24, uni:0.74, market:0.22, castle:0.18, farm:0.26};
+// What shape a building is, before any of its detail is painted on. Two
+// buildings with the same box and the same roof are the same building with a
+// different sign hung on it, however much plaster and timber goes on the
+// walls. Roof form and open framing carry the silhouette; the extras are one
+// idea each, not a pile of ornament.
+const FORM={
+  tc:      {roof:'hip',   pitch:0.22, porch:1},
+  house:   {roof:'gable', pitch:0.30},
+  mill:    {roof:'cone',  pitch:0.66, sails:1, round:1},
+  lumber:  {roof:'gable', pitch:0.17, open:1},
+  mining:  {roof:'gable', pitch:0.17, open:1},
+  farm:    {roof:'gable', pitch:0.26},
+  barracks:{roof:'gable', pitch:0.18},
+  range:   {roof:'gable', pitch:0.20, open:1},
+  stable:  {roof:'hip',   pitch:0.13},
+  smith:   {roof:'gable', pitch:0.26, stack:1},
+  market:  {roof:'gable', pitch:0.13, open:1, awning:1},
+  siege:   {roof:'gable', pitch:0.17, open:1, gantry:1},
+  granary: {roof:'gable', pitch:0.44, staddle:1},
+  uni:     {roof:'hip',   pitch:0.30, cupola:1, stone:1},
+  dock:    {roof:'gable', pitch:0.16, open:1},
+  camp:    {roof:'gable', pitch:0.26},
+  tower:   {roof:'cone',  pitch:0.34, stone:1},
+  castle:  {roof:'flat',  pitch:0.10, stone:1, turret:1},
+  plot:    {roof:'none',  pitch:0}
+};
+const FORM_DEF={roof:'gable', pitch:0.22};
+// The second cut of a building: the same plan, weathered differently. Small
+// and consistent, never random - two houses side by side should look like two
+// houses, not like two attempts at one.
+function roofTint(c,v){
+  if(!v||!c||c[0]!=='#') return c;
+  const [r,g,b]=hexRGB(c);
+  return 'rgb('+Math.round(r*0.88)+','+Math.round(g*0.90)+','+Math.round(b*0.96)+')';
+}
+const formOf=t=>FORM[t]||FORM_DEF;
 const CH_T=8, CH_PX=CH_T*28;
 const chunkCache=new Map();
 let chunkTick=0;
@@ -6654,23 +6690,37 @@ function bldTier(b){
   return p>0.995?0 : p>0.66?1 : p>0.33?2 : 3;
 }
 function bldPad(type){
-  const w=BLD[type].w*TILE;
-  const rise = type==='plot'?0 : type==='tower'?w*0.34 : type==='castle'?w*0.16 : w*0.22;
-  return {l:14, r:Math.ceil(w*0.10)+14, t:Math.ceil(rise)+28, b:14};
+  const w=BLD[type].w*TILE, f=formOf(type);
+  const rise = type==='plot'?0 : w*f.pitch;
+  // A mill's sails swing well outside its walls, and a granary's cupola or a
+  // siege gantry stands above the ridge. The box has to hold them.
+  const side = f.sails ? Math.ceil(w*0.62) : 0;
+  const over = f.sails ? Math.ceil(w*0.34) : f.cupola ? 16 : f.gantry ? 12 : 0;
+  return {l:14+side, r:Math.ceil(w*0.10)+14+side, t:Math.ceil(rise)+28+over, b:14};
 }
-function bldSprite(type,owner,tier){
-  const d=BLD[type], w=d.w*TILE, h=d.h*TILE, p=bldPad(type);
-  return sprite('B'+type+owner+tier, w+p.l+p.r, h+p.t+p.b,
-    g=>bldBody(g,type,owner,tier,p.l,p.t,w,h), {ox:p.l, oy:p.t});
+// Two of everything. A street where every house is the same file rendered
+// twice reads as a printed sheet, not a village; two cuts of the same building
+// is enough to break that, and costs one more cached canvas per type.
+function bldSprite(type,owner,tier,vr){
+  const d=BLD[type], w=d.w*TILE, h=d.h*TILE, p=bldPad(type), v=(vr|0)&1;
+  return sprite('B'+type+owner+tier+'v'+v, w+p.l+p.r, h+p.t+p.b,
+    g=>bldBody(g,type,owner,tier,p.l,p.t,w,h,v), {ox:p.l, oy:p.t});
 }
 function bldApex(type,py,w){
-  return py-(type==='tower'?w*0.34:type==='castle'?w*0.16:w*0.22);
+  return py-w*formOf(type).pitch;
+}
+// Where a mast stands. On a roofed building that is the ridge; on a castle
+// there is no ridge, and the staff goes up from the wall head between the
+// merlons instead of floating above them.
+function bldMast(type,py,w){
+  return formOf(type).roof==='flat' ? py+5 : bldApex(type,py,w);
 }
 
 // Where the windows are, in wall-relative coordinates, so the baked frame and
 // the live glow cannot drift apart. Returned as [x, y, w, h] of the opening.
 function bldWindows(type,px,py,w,h){
   if(type==='plot'||type==='standard'||type==='palisade'||type==='stonewall'||type==='gate') return [];
+  if(formOf(type).open) return [];
   const wallTop=py+12, out=[];
   if(type==='tower') return [[px+w/2-4, wallTop+8, 8, 11]];      // an arrow slit
   if(w>=98){                                                      // castle, town center
@@ -6929,8 +6979,9 @@ function fieldBody(g,px,py,w,h,packed){
   }
 }
 
-function bldBody(g,type,owner,tier,px,py,w,h){
+function bldBody(g,type,owner,tier,px,py,w,h,v){
   const d=BLD[type];
+  v=v|0;
   // The shadow the whole building throws, pushed away from the sun rather than
   // sitting symmetrically under it. A flat ellipse centred on the footprint is
   // what makes a building look pasted onto the grass instead of standing in it.
@@ -6978,7 +7029,8 @@ function bldBody(g,type,owner,tier,px,py,w,h){
       g.beginPath(); g.moveTo(px+2.5,ry+0.5); g.lineTo(px+w-2.5,ry+0.5); g.stroke();
     }
   }
-  {
+  const FW=formOf(type);
+  if(!FW.stone){
     const wp=grainPat(g,'plaster',48,7,GRAIN_DARK,GRAIN_LIGHT,0.16);
     if(wp){ g.save(); g.beginPath(); g.rect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.clip();
       g.fillStyle=wp; g.fillRect(px+2,wallTop,w-4,(py+h)-wallTop-2); g.restore(); }
@@ -6992,10 +7044,26 @@ function bldBody(g,type,owner,tier,px,py,w,h){
       g.fillRect(px+4+i*9, fy+1.5+((i%2)?2.5:0), 6.5, 3);
     g.fillStyle='rgba(20,16,10,.20)'; g.fillRect(px+2,fy,w-4,1.4);
 
-    // Half-timbering: posts, a rail, and braces in the corners.
+    // Half-timbering: posts, a rail, and braces in the corners. A stone
+    // building has none of it. What it has is bigger blocks laid in courses
+    // that break joint, and that is the whole of the difference in material.
     const t0=wallTop+2, t1=fy-1;
+    if(FW.stone){
+      g.strokeStyle=deepAO(.18); g.lineWidth=HAIR();
+      const ch=COURSE(11);
+      for(let ry=wallTop+11, r=0; ry<fy; ry+=ch, r++){
+        g.beginPath(); g.moveTo(px+2.5,ry+0.5); g.lineTo(px+w-2.5,ry+0.5); g.stroke();
+        for(let bx=px+4+((r%2)?11:0); bx<px+w-6; bx+=22){
+          g.beginPath(); g.moveTo(bx+0.5,ry+0.5); g.lineTo(bx+0.5,Math.min(fy,ry+ch)+0.5); g.stroke();
+        }
+      }
+      g.fillStyle=sunLit(.07);
+      for(let ry=wallTop+11, r=0; ry<fy-6; ry+=ch, r++)
+        for(let bx=px+5+((r%2)?11:0); bx<px+w-8; bx+=44)
+          g.fillRect(bx, ry+1.5, 19, 2);
+    } else {
     g.strokeStyle='rgba(78,60,38,.62)'; g.lineWidth=2.2;
-    const posts=Math.max(2, Math.round((w-8)/22));
+    const posts=Math.max(2, Math.round((w-8)/22)+v);
     for(let i=0;i<=posts;i++){
       const x=px+4+(w-8)*(i/posts);
       g.beginPath(); g.moveTo(x,t0); g.lineTo(x,t1); g.stroke();
@@ -7014,8 +7082,63 @@ function bldBody(g,type,owner,tier,px,py,w,h){
       const x=px+4+(w-8)*(i/posts)-1;
       g.beginPath(); g.moveTo(x,t0); g.lineTo(x,t1); g.stroke();
     }
+    }
   }
   g.fillStyle='rgba(0,0,0,.11)'; g.fillRect(px+2,py+h-10,w-4,8);
+
+  /* ---- an open-framed shed --------------------------------------------------
+     A lumber camp, a range, a market and a siege yard are not houses. They are
+     roofs on posts with the front standing open, and the black bay under the
+     roof is the whole difference. Nothing else about them needs to change.   */
+  {
+    const F0=formOf(type);
+    if(F0.open && !isFarm){
+      const bx=px+w*0.10, bw2=w*0.80;
+      const by=wallTop+5, bh2=(py+h-4)-by;
+      g.fillStyle='#171208'; g.fillRect(bx,by,bw2,bh2);          // the dark of the bay
+      g.fillStyle='rgba(96,80,52,.35)';                          // a back wall, dimly
+      g.fillRect(bx+4,by+bh2*0.30,bw2-8,bh2*0.70);
+      g.fillStyle='rgba(0,0,0,.55)'; g.fillRect(bx,by,bw2,5);    // under the lintel
+      g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(bx,by,4,bh2);
+      g.fillStyle='#5E4728';                                     // the lintel beam
+      g.fillRect(bx-4, by-5, bw2+8, 6);
+      g.fillStyle=sunLit(.16); g.fillRect(bx-4, by-5, bw2+8, 1.6);
+      g.fillStyle=skyShade(.34); g.fillRect(bx-4, by+0.4, bw2+8, 1.4);
+      const posts=Math.max(2, Math.round(bw2/26));               // and the posts under it
+      for(let i=0;i<=posts;i++){
+        const x0=bx+bw2*(i/posts)-2.6;
+        g.fillStyle='#6B5233'; g.fillRect(x0, by-3, 5.2, bh2+3);
+        g.fillStyle=sunLit(.14); g.fillRect(x0, by-3, 1.6, bh2+3);
+        g.fillStyle=skyShade(.30); g.fillRect(x0+3.8, by-3, 1.4, bh2+3);
+      }
+      g.fillStyle='rgba(60,48,28,.55)';                          // a beaten earth floor
+      g.fillRect(bx, py+h-9, bw2, 6);
+      if(F0.awning){
+        // The cloth hangs out over the front of the stalls on its own poles,
+        // clear of the roof. A striped awning under a shed roof is the one
+        // thing that says market from right across the valley.
+        const ay=by+bh2*0.30, aw=w*1.02, ax=px+w/2-aw/2, drop=13;
+        g.strokeStyle='#6B5233'; g.lineWidth=2.4;              // the poles
+        g.beginPath();
+        g.moveTo(ax+3, ay+drop); g.lineTo(ax+3, py+h-4);
+        g.moveTo(ax+aw-3, ay+drop); g.lineTo(ax+aw-3, py+h-4);
+        g.stroke();
+        g.fillStyle=teamColor(owner);
+        g.beginPath();
+        g.moveTo(bx+2, ay-7); g.lineTo(bx+bw2-2, ay-7);
+        g.lineTo(ax+aw, ay+drop); g.lineTo(ax, ay+drop); g.closePath(); g.fill();
+        g.save();
+        g.beginPath();
+        g.moveTo(bx+2, ay-7); g.lineTo(bx+bw2-2, ay-7);
+        g.lineTo(ax+aw, ay+drop); g.lineTo(ax, ay+drop); g.closePath(); g.clip();
+        g.fillStyle='rgba(246,240,222,.88)';
+        for(let i=-1;i<Math.ceil(aw/17);i++) g.fillRect(ax+i*17, ay-9, 8.5, drop+12);
+        g.restore();
+        g.fillStyle=deepAO(.32); g.fillRect(ax, ay+drop-2.4, aw, 2.8);
+        g.fillStyle=sunLit(.20); g.fillRect(bx+2, ay-7, bw2-4, 1.8);
+      }
+    }
+  }
 
   if(!isFarm){
     // Weather. A building that has stood through a winter has a green line at
@@ -7024,30 +7147,59 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     // size.
     g.fillStyle='rgba(74,96,52,.30)';
     for(let i=0;i<Math.max(3,((w-8)/13)|0);i++){
-      const mx=px+4+i*13+((i*7)%5);
-      g.beginPath(); g.ellipse(mx, py+h-4.5, 5+((i*3)%4), 2.6, 0, 0, 6.283); g.fill();
+      const mx=px+4+i*13+((i*7+v*4)%5);
+      g.beginPath(); g.ellipse(mx, py+h-4.5, 4+((i*3+v)%5), 2.6, 0, 0, 6.283); g.fill();
     }
     g.fillStyle='rgba(40,32,20,.13)';
     for(let i=0;i<Math.max(2,((w-10)/19)|0);i++)
-      g.fillRect(px+7+i*19, wallTop+2, 2.6, 9+((i*5)%7));
+      g.fillRect(px+7+i*19+v*5, wallTop+2, 2.6, 8+((i*5+v*3)%8));
     // and the windows, which are holes in a wall rather than lit rectangles
     const stone = type==='castle'||type==='tower'||type==='uni'||type==='market';
-    for(const wn of bldWindows(type,px,py,w,h)) windowFrame(g, wn[0],wn[1],wn[2],wn[3], stone);
+    const wins=bldWindows(type,px,py,w,h);
+    wins.forEach((wn,i)=>{
+      windowFrame(g, wn[0],wn[1],wn[2],wn[3], stone);
+      if(v && i===(wins.length>1?1:0)){        // a shutter thrown back against the wall
+        g.fillStyle='#6B5233'; g.fillRect(wn[0]+wn[2]+2.5, wn[1]-1, 3.4, wn[3]+2);
+        g.fillStyle=sunLit(.16); g.fillRect(wn[0]+wn[2]+2.5, wn[1]-1, 1.2, wn[3]+2);
+        g.fillStyle='rgba(20,15,9,.35)'; g.fillRect(wn[0]+wn[2]+5.9, wn[1]-1, 1.6, wn[3]+2);
+      }
+    });
   }
 
   if(isFarm){
     fieldBody(g,px,py,w,h,tier);
   } else {
     const apex=bldApex(type,py,w) + (tier===2?3:tier===3?8:0);   // a beaten roof sags
-    g.fillStyle=d.roof||teamColor(owner);
-    g.beginPath(); g.moveTo(px-3,py+13); g.lineTo(px+w/2,apex); g.lineTo(px+w+3,py+13); g.closePath(); g.fill();
-    g.fillStyle='rgba(255,255,255,.15)';
-    g.beginPath(); g.moveTo(px-3,py+13); g.lineTo(px+w/2,apex); g.lineTo(px+w/2,py+13); g.closePath(); g.fill();
+    const F=formOf(type);
+    const eave=py+13, L0=px-3, R0=px+w+3, cx0=px+w/2;
+    // A hip roof has a short ridge instead of a point, and no gable end at all.
+    // A cone comes to a point over a round tower. Which of the three a building
+    // wears is most of what tells it apart from its neighbour at this distance.
+    const ridge = F.roof==='hip' ? w*0.19 : 0;
+    const roofPath=()=>{
+      g.beginPath();
+      if(F.roof==='cone'){
+        g.moveTo(L0+w*0.10, eave);
+        g.quadraticCurveTo(px+w*0.30, apex+(eave-apex)*0.30, cx0, apex);
+        g.quadraticCurveTo(px+w*0.70, apex+(eave-apex)*0.30, R0-w*0.10, eave);
+      } else {
+        g.moveTo(L0,eave); g.lineTo(cx0-ridge,apex);
+        if(ridge) g.lineTo(cx0+ridge,apex);
+        g.lineTo(R0,eave);
+      }
+      g.closePath();
+    };
+    if(F.roof!=='flat'){
+    g.fillStyle=roofTint(d.roof||teamColor(owner), v);
+    roofPath(); g.fill();
+    g.fillStyle='rgba(255,255,255,.15)';                    // the sunward slope
+    g.beginPath();
+    g.moveTo(L0,eave); g.lineTo(cx0-ridge,apex); g.lineTo(cx0-ridge,eave); g.closePath(); g.fill();
     g.save();
-    g.beginPath(); g.moveTo(px-3,py+13); g.lineTo(px+w/2,apex); g.lineTo(px+w+3,py+13); g.closePath(); g.clip();
+    roofPath(); g.clip();
     g.strokeStyle='rgba(28,22,14,.16)'; g.lineWidth=HAIR();               // courses of tile
-    for(let ry=apex+4; ry<py+13; ry+=COURSE(4)){
-      g.beginPath(); g.moveTo(px-3,ry); g.lineTo(px+w+3,ry); g.stroke();
+    for(let ry=apex+4; ry<eave; ry+=COURSE(4)){
+      g.beginPath(); g.moveTo(L0,ry); g.lineTo(R0,ry); g.stroke();
     }
     if(tier>=2){                                                          // shed tiles
       g.fillStyle='rgba(26,20,13,.55)';
@@ -7063,36 +7215,56 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     if(tp){ g.fillStyle=tp; g.fillRect(px-4,apex-2,w+8,(py+14)-apex+4); }
     g.restore();
     g.strokeStyle=sunLit(.22); g.lineWidth=1.5;
-    g.beginPath(); g.moveTo(px-3,py+13); g.lineTo(px+w/2,apex); g.stroke();
+    g.beginPath(); g.moveTo(L0,eave); g.lineTo(cx0-ridge,apex); g.stroke();
     g.strokeStyle=deepAO(.35); g.lineWidth=1;
-    g.beginPath(); g.moveTo(px-3,py+13.5); g.lineTo(px+w/2,apex); g.lineTo(px+w+3,py+13.5); g.stroke();
-    // a ridge cap along the peak and a shadow line under the eaves
+    g.beginPath(); g.moveTo(L0,eave+0.5); g.lineTo(cx0-ridge,apex);
+    g.lineTo(cx0+ridge,apex); g.lineTo(R0,eave+0.5); g.stroke();
+    // a ridge cap along the peak
     g.strokeStyle=sunLit(.30); g.lineWidth=2;
-    g.beginPath(); g.moveTo(px+w/2-1.5,apex+1.5); g.lineTo(px+w/2+1.5,apex+1.5); g.stroke();
-    // Bargeboards down both rakes and a crossed pair of timbers in the gable.
-    // This is the join a real roof makes with a real wall, and it is most of
-    // what stops the triangle reading as a sticker laid over the box.
-    g.strokeStyle='rgba(66,50,32,.85)'; g.lineWidth=2.6; g.lineJoin='round';
-    g.beginPath(); g.moveTo(px-3.5,py+13.5); g.lineTo(px+w/2,apex-1); g.lineTo(px+w+3.5,py+13.5); g.stroke();
-    g.strokeStyle='rgba(255,244,208,.16)'; g.lineWidth=1;
-    g.beginPath(); g.moveTo(px-2.5,py+12.5); g.lineTo(px+w/2,apex-1.6); g.stroke();
-    {
+    g.beginPath(); g.moveTo(cx0-ridge-1.5,apex+1.5); g.lineTo(cx0+ridge+1.5,apex+1.5); g.stroke();
+    if(F.roof==='gable'){
+      // Bargeboards down both rakes and a crossed pair of timbers in the gable.
+      // This is the join a real roof makes with a real wall, and it is most of
+      // what stops the triangle reading as a sticker laid over the box.
+      g.strokeStyle='rgba(66,50,32,.85)'; g.lineWidth=2.6; g.lineJoin='round';
+      g.beginPath(); g.moveTo(px-3.5,eave+0.5); g.lineTo(cx0,apex-1); g.lineTo(px+w+3.5,eave+0.5); g.stroke();
+      g.strokeStyle='rgba(255,244,208,.16)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(px-2.5,py+12.5); g.lineTo(cx0,apex-1.6); g.stroke();
       const gy0=py+12, gy1=apex+Math.min(16,(gy0-apex)*0.55);
       const half=(gy0-gy1)/(gy0-apex)*(w/2+3);
       g.strokeStyle='rgba(74,56,36,.72)'; g.lineWidth=2.1;
       g.beginPath();
-      g.moveTo(px+w/2-half, gy1); g.lineTo(px+w/2+half*0.55, gy0);
-      g.moveTo(px+w/2+half, gy1); g.lineTo(px+w/2-half*0.55, gy0);
-      g.moveTo(px+w/2, apex+3); g.lineTo(px+w/2, gy0);
+      g.moveTo(cx0-half, gy1); g.lineTo(cx0+half*0.55, gy0);
+      g.moveTo(cx0+half, gy1); g.lineTo(cx0-half*0.55, gy0);
+      g.moveTo(cx0, apex+3); g.lineTo(cx0, gy0);
       g.stroke();
+    } else if(F.roof==='hip'){
+      // A hip has no gable to timber. What it has instead are the four hips
+      // themselves, and the eaves running unbroken all the way round.
+      g.strokeStyle='rgba(66,50,32,.80)'; g.lineWidth=2.2; g.lineJoin='round';
+      g.beginPath();
+      g.moveTo(px-3.5,eave+0.5); g.lineTo(cx0-ridge,apex);
+      g.lineTo(cx0+ridge,apex); g.lineTo(px+w+3.5,eave+0.5); g.stroke();
+      g.strokeStyle='rgba(255,244,208,.14)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(px-2.5,py+12.5); g.lineTo(cx0-ridge,apex-0.6); g.stroke();
+    } else if(F.roof==='cone'){
+      g.strokeStyle='rgba(58,44,28,.85)'; g.lineWidth=2.2; g.lineJoin='round';
+      roofPath(); g.stroke();
+      g.fillStyle='#E8C15A';                                 // a finial on the cap
+      g.beginPath(); g.arc(cx0,apex-2,2.6,0,6.283); g.fill();
+    }
     }
     g.lineJoin='miter';
-    g.fillStyle='rgba(18,14,9,.30)'; g.fillRect(px-3, py+13, w+6, 2.6);
-    g.fillStyle='rgba(38,30,20,.55)';
-    for(let i=0;i<Math.max(2,((w+6)/16)|0);i++)          // rafter ends under the eaves
-      g.fillRect(px-2+i*16, py+15, 3, 2.4);
+    if(F.roof!=='flat'){
+      g.fillStyle='rgba(18,14,9,.30)'; g.fillRect(px-3, py+13, w+6, 2.6);
+      g.fillStyle='rgba(38,30,20,.55)';
+      for(let i=0;i<Math.max(2,((w+6)/16)|0);i++)        // rafter ends under the eaves
+        g.fillRect(px-2+i*16, py+15, 3, 2.4);
+    }
     // Door: a stone lintel and jambs, planks, a strap hinge, a ring, and a step
-    // worn into the ground in front of it.
+    // worn into the ground in front of it. A shed that stands open has none.
+    const F2=formOf(type);
+    if(!F2.open&&!F2.porch){
     const dw=w>=70?16:10, dh=w>=70?21:14;
     const dx=px+w/2-dw/2, dy=py+h-2-dh;
     g.fillStyle='rgba(96,88,70,.75)';
@@ -7113,8 +7285,9 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     g.beginPath(); g.arc(dx+dw-3.5, dy+dh*0.52, 1.9, 0, 6.283); g.stroke();
     g.fillStyle='rgba(150,140,116,.40)';
     g.beginPath(); g.ellipse(px+w/2, py+h-1, dw*0.85, 3, 0, 0, 6.283); g.fill();
-    if(CHIMNEY[type]){
-      const cx2=px+w*CHIMNEY[type], ap2=bldApex(type,py,w);
+    }
+    if(CHIMNEY[type]&&!F2.open){
+      const cx2=px+w*(v?1-CHIMNEY[type]:CHIMNEY[type]), ap2=bldApex(type,py,w);
       const roofY=py+13+(ap2-(py+13))*(1-Math.abs(cx2-(px+w/2))/(w/2+3));
       g.fillStyle='#6E6252'; g.fillRect(cx2-4, roofY-13, 8, 15);
       g.fillStyle=sunLit(.16); g.fillRect(cx2-4, roofY-13, 2.6, 15);
@@ -7125,8 +7298,14 @@ function bldBody(g,type,owner,tier,px,py,w,h){
     // The insignia hangs on a board under the eaves rather than being painted
     // on the plaster, which is what makes a trade building read as a trade.
     if(SIGNED[type]){
-      const sw=Math.min(38, Math.max(26, w*0.46)), sh=sw*0.66;
-      const sx2=px+w/2-sw/2, sy2=py+16;
+      // On a walled building the board hangs under the eaves in the middle of
+      // the plaster. On an open shed there is no plaster: it hangs off the
+      // lintel to one side, so the bay behind it stays open.
+      const op=F2.open;
+      const sw=op ? Math.min(30, Math.max(22, w*0.32)) : Math.min(38, Math.max(26, w*0.46));
+      const sh=sw*0.66;
+      const sx2=op ? px+w*0.13 : px+w/2-sw/2;
+      const sy2=op ? wallTop+9 : py+16;
       g.strokeStyle='#4A3B26'; g.lineWidth=1.4;
       g.beginPath();
       g.moveTo(sx2+sw*0.22, sy2-4); g.lineTo(sx2+sw*0.22, sy2);
@@ -7179,6 +7358,7 @@ function bldBody(g,type,owner,tier,px,py,w,h){
       g.fillStyle='rgba(250,206,116,.85)'; g.fillRect(lx-1.6, ly-1, 3.2, 4.6);
       g.fillStyle='#4E4438'; g.fillRect(lx-3.4, ly-3.4, 6.8, 1.8);
     }
+    bldSignature(g,type,owner,px,py,w,h,tier);
     bldProps(g,type,px,py,w,h);
     // the flagpole is static; the cloth on it is drawn live
     if(d.roof){
@@ -7282,6 +7462,179 @@ function steadingYard(g,px,py,w,h){
 
 // What is stacked against the wall. Every building keeps something outside it,
 // and it is the fastest way to tell two identical boxes apart at a glance.
+/* ---- one idea each --------------------------------------------------------
+   A mill is a tower with sails on it. A smith is a chimney with a shed
+   attached. A granary stands off the ground on stones so the rats cannot
+   climb. A university has a lantern on its roof. A siege yard has a gantry
+   for lifting an engine's arm. Each of these is a single strong shape read
+   from a long way off, which is worth more than any amount of ornament.    */
+function bldSignature(g,type,owner,px,py,w,h,tier){
+  const d=BLD[type], F=formOf(type), cx=px+w/2, apex=bldApex(type,py,w), base=py+h-3;
+  if(F.sails){
+    // Four sweeps on a cross, canted so they read as turning rather than as a
+    // plus sign painted on the sky.
+    const hub=apex+6, arm=w*0.86, tilt=0.42;
+    for(let i=0;i<4;i++){
+      const a=tilt+i*1.5708;
+      const dx=Math.cos(a), dy=Math.sin(a)*0.62;
+      const ex=cx+dx*arm, ey=hub+dy*arm;
+      g.strokeStyle='rgba(30,22,12,.85)'; g.lineWidth=4.2; g.lineCap='round';
+      g.beginPath(); g.moveTo(cx,hub); g.lineTo(ex,ey); g.stroke();
+      g.strokeStyle='#6E5333'; g.lineWidth=2.6;
+      g.beginPath(); g.moveTo(cx,hub); g.lineTo(ex,ey); g.stroke();
+      // the cloth, on one side of each stock
+      const nx=-dy/Math.hypot(dx,dy), ny=dx/Math.hypot(dx,dy);
+      g.fillStyle='rgba(222,210,178,.80)';
+      g.beginPath();
+      g.moveTo(cx+dx*arm*0.26, hub+dy*arm*0.26);
+      g.lineTo(ex,ey);
+      g.lineTo(ex+nx*w*0.16, ey+ny*w*0.16);
+      g.lineTo(cx+dx*arm*0.26+nx*w*0.13, hub+dy*arm*0.26+ny*w*0.13);
+      g.closePath(); g.fill();
+      g.strokeStyle='rgba(60,48,30,.55)'; g.lineWidth=1; g.stroke();
+    }
+    g.fillStyle='#4E4438';
+    g.beginPath(); g.arc(cx,hub,4.4,0,6.283); g.fill();
+    g.fillStyle=sunLit(.22);
+    g.beginPath(); g.arc(cx-1.2,hub-1.2,2.2,0,6.283); g.fill();
+    g.lineCap='butt';
+  }
+  if(F.stack){
+    // A forge chimney is not a cottage chimney. It is the tallest thing on the
+    // building and it stands proud of the wall, not out of the roof.
+    const sx=px+w*0.80, top=apex-10;
+    g.fillStyle='#5E574A'; g.fillRect(sx-6, top, 12, base-top);
+    g.fillStyle=sunLit(.15); g.fillRect(sx-6, top, 3.4, base-top);
+    g.fillStyle=skyShade(.32); g.fillRect(sx+2.6, top, 3.4, base-top);
+    g.strokeStyle='rgba(28,22,14,.28)'; g.lineWidth=HAIR();
+    for(let ry=top+7; ry<base-2; ry+=COURSE(7)){
+      g.beginPath(); g.moveTo(sx-5.5,ry+0.5); g.lineTo(sx+5.5,ry+0.5); g.stroke();
+    }
+    g.fillStyle='#4A443A'; g.fillRect(sx-8, top-3.5, 16, 4.5);
+    g.fillStyle='rgba(12,9,5,.80)'; g.fillRect(sx-3.6, top-2.6, 7.2, 2.4);
+    g.fillStyle=deepAO(.30); g.fillRect(sx-8, top+1, 16, 1.6);
+    // and the mouth of the forge under it, still warm
+    const fy=base-13;
+    g.fillStyle='#120D07'; g.fillRect(sx-9, fy, 18, 11);
+    g.fillStyle='rgba(226,118,44,.55)'; g.fillRect(sx-6, fy+3, 12, 7);
+    g.fillStyle='rgba(252,214,132,.75)'; g.fillRect(sx-3.5, fy+5, 7, 4);
+    g.fillStyle='#4A443A'; g.fillRect(sx-10, fy-3, 20, 3.4);
+  }
+  if(F.staddle){
+    // Staddle stones: mushroom caps a rat cannot climb past. They lift the
+    // whole store off the ground, which is the shape of every granary there
+    // has ever been.
+    const n=Math.max(2, Math.round(w/26));
+    for(let i=0;i<=n;i++){
+      const x=px+5+(w-10)*(i/n);
+      g.fillStyle=skyShade(.28);
+      g.beginPath(); g.ellipse(x+1.5, base+1, 6, 2.4, 0,0,6.283); g.fill();
+      g.fillStyle='#8A8474'; g.fillRect(x-2.6, base-8, 5.2, 8);
+      g.fillStyle='#A29B88';
+      g.beginPath(); g.ellipse(x, base-8, 6.4, 2.8, 0,0,6.283); g.fill();
+      g.fillStyle=sunLit(.20);
+      g.beginPath(); g.ellipse(x-1.4, base-8.8, 3.2, 1.4, 0,0,6.283); g.fill();
+    }
+    g.fillStyle='rgba(0,0,0,.45)'; g.fillRect(px+3, base-9, w-6, 3);
+    // a ladder up to the door, because there is now a step to climb
+    g.strokeStyle='#7A5C36'; g.lineWidth=2;
+    g.beginPath();
+    g.moveTo(cx-9, base+1); g.lineTo(cx-5, base-12);
+    g.moveTo(cx+1, base+1); g.lineTo(cx+5, base-12);
+    g.stroke();
+    g.lineWidth=1.4;
+    for(let i=0;i<3;i++){
+      const t=(i+0.6)/3.6, y=base+1-(13*t);
+      g.beginPath(); g.moveTo(cx-9+4*t, y); g.lineTo(cx+1+4*t, y); g.stroke();
+    }
+  }
+  if(F.cupola){
+    // A lantern over the hall: the one thing on the skyline that says this
+    // building is not a barracks with a better sign.
+    const cy=apex-2;
+    g.fillStyle='#8E8878'; g.fillRect(cx-8, cy-13, 16, 13);
+    g.fillStyle=sunLit(.18); g.fillRect(cx-8, cy-13, 4.4, 13);
+    g.fillStyle=skyShade(.30); g.fillRect(cx+4, cy-13, 4, 13);
+    g.fillStyle='#16110B'; g.fillRect(cx-4.4, cy-10, 3.4, 8);
+    g.fillRect(cx+1, cy-10, 3.4, 8);
+    g.fillStyle='#7C4A32';                                   // its own little roof
+    g.beginPath();
+    g.moveTo(cx-11, cy-13); g.lineTo(cx, cy-24); g.lineTo(cx+11, cy-13); g.closePath(); g.fill();
+    g.fillStyle='rgba(255,255,255,.16)';
+    g.beginPath();
+    g.moveTo(cx-11, cy-13); g.lineTo(cx, cy-24); g.lineTo(cx, cy-13); g.closePath(); g.fill();
+    g.fillStyle='#E8C15A';
+    g.beginPath(); g.arc(cx, cy-26, 2.4, 0, 6.283); g.fill();
+  }
+  if(F.turret){
+    // A round turret at one corner, standing a full storey over the curtain.
+    // It is what stops a castle reading as a very large barn.
+    const tx=px+w*0.16, tw=w*0.26, top=py+h-3-(h+22);
+    const bot=py+h-3;
+    g.fillStyle='#9E9A8C'; g.fillRect(tx-tw/2, top, tw, bot-top);
+    g.fillStyle=sunLit(.16); g.fillRect(tx-tw/2, top, tw*0.30, bot-top);
+    g.fillStyle=skyShade(.30); g.fillRect(tx+tw*0.24, top, tw*0.26, bot-top);
+    g.strokeStyle=deepAO(.20); g.lineWidth=HAIR();
+    for(let ry=top+11; ry<bot-3; ry+=COURSE(11)){
+      g.beginPath(); g.moveTo(tx-tw/2+0.5,ry+0.5); g.lineTo(tx+tw/2-0.5,ry+0.5); g.stroke();
+    }
+    g.fillStyle='#16110B'; g.fillRect(tx-3, top+16, 6, 12);   // an arrow slit
+    g.fillStyle='rgba(0,0,0,.45)'; g.fillRect(tx-3, top+16, 6, 2.4);
+    // its own crown of merlons
+    g.fillStyle=skyShade(.24); g.fillRect(tx-tw/2-2, top+6, tw+4, 2.4);
+    for(let bx2=tx-tw/2-2; bx2<tx+tw/2+2; bx2+=10){
+      const bw2=Math.min(6, tx+tw/2+2-bx2);
+      g.fillStyle='#9E9A8C'; g.fillRect(bx2, top-6, bw2, 13);
+      g.fillStyle=sunLit(.18); g.fillRect(bx2, top-6, bw2*0.34, 13);
+      g.fillStyle=skyShade(.28); g.fillRect(bx2, top-6, bw2, 1.6);
+    }
+    g.fillStyle=deepAO(.40); g.fillRect(tx-tw/2-2, top+5, tw+4, 1.6);
+  }
+  if(F.porch){
+    // A covered entrance on posts. Nobody builds a porch on a cottage, and
+    // the shadow under it is what makes the hall behind read as somewhere you
+    // are meant to walk into.
+    const pw=w*0.38, pxx=cx-pw/2, ph=26, top=base-ph;
+    g.fillStyle='rgba(20,16,10,.30)';
+    g.beginPath(); g.ellipse(cx+3, base+2, pw*0.62, 4, 0,0,6.283); g.fill();
+    g.fillStyle='#171208'; g.fillRect(pxx+4, top+6, pw-8, ph-6);   // the shade inside
+    g.fillStyle='rgba(96,80,52,.30)'; g.fillRect(pxx+6, top+13, pw-12, ph-13);
+    g.fillStyle='#6B5233';                                          // the two posts
+    g.fillRect(pxx, top+4, 5.4, ph-4); g.fillRect(pxx+pw-5.4, top+4, 5.4, ph-4);
+    g.fillStyle=sunLit(.16); g.fillRect(pxx, top+4, 1.8, ph-4);
+    g.fillStyle=skyShade(.30); g.fillRect(pxx+pw-2, top+4, 2, ph-4);
+    g.fillStyle=d.roof||teamColor(owner);                           // its own little roof
+    g.beginPath();
+    g.moveTo(pxx-6, top+6); g.lineTo(cx, top-9); g.lineTo(pxx+pw+6, top+6); g.closePath(); g.fill();
+    g.fillStyle='rgba(255,255,255,.15)';
+    g.beginPath();
+    g.moveTo(pxx-6, top+6); g.lineTo(cx, top-9); g.lineTo(cx, top+6); g.closePath(); g.fill();
+    g.strokeStyle='rgba(58,44,28,.85)'; g.lineWidth=2.2; g.lineJoin='round';
+    g.beginPath();
+    g.moveTo(pxx-6, top+6); g.lineTo(cx, top-9); g.lineTo(pxx+pw+6, top+6); g.stroke();
+    g.lineJoin='miter';
+    g.fillStyle='rgba(18,14,9,.32)'; g.fillRect(pxx-6, top+6, pw+12, 2.4);
+    g.fillStyle='rgba(150,140,116,.40)';                            // a worn step
+    g.beginPath(); g.ellipse(cx, base+1, pw*0.5, 3.4, 0,0,6.283); g.fill();
+  }
+  if(F.gantry){
+    // A beam out over the yard with a block hanging off it. Nothing else in
+    // the valley has a straight line sticking out above its roof.
+    const gy=py+11, ex=px+w+10;
+    g.strokeStyle='rgba(30,22,12,.85)'; g.lineWidth=5; g.lineCap='round';
+    g.beginPath(); g.moveTo(px+w*0.42, gy-6); g.lineTo(ex, gy-6); g.stroke();
+    g.strokeStyle='#6E5333'; g.lineWidth=3.2;
+    g.beginPath(); g.moveTo(px+w*0.42, gy-6); g.lineTo(ex, gy-6); g.stroke();
+    g.strokeStyle='#5E4728'; g.lineWidth=2.4;                 // its brace
+    g.beginPath(); g.moveTo(px+w*0.52, gy-6); g.lineTo(px+w*0.72, gy+9); g.stroke();
+    g.strokeStyle='rgba(40,32,20,.75)'; g.lineWidth=1.4;      // rope and block
+    g.beginPath(); g.moveTo(ex-5, gy-5); g.lineTo(ex-5, gy+11); g.stroke();
+    g.fillStyle='#4E4438'; g.fillRect(ex-8, gy+11, 6, 7);
+    g.fillStyle=sunLit(.16); g.fillRect(ex-8, gy+11, 2, 7);
+    g.lineCap='butt';
+  }
+}
+
 function bldProps(g,type,px,py,w,h){
   const base=py+h-3, L=px+5, R=px+w-5;
   const barrel=(x,y,r)=>{
@@ -7441,16 +7794,37 @@ function bldDamage(g,type,px,py,w,h,tier){
     g.stroke();
   }
   if(tier>=2){
-    g.fillStyle=skyShade(.32);
-    g.beginPath(); g.ellipse(px+w*0.70, top+bh*0.58, w*0.19, bh*0.30, 0,0,6.283); g.fill();
+    // Soot, not a grey disc. Smoke off a burning wall stains upward and fades,
+    // and it belongs over the opening it came out of.
+    const sx=px+w*0.70, sy=top+bh*0.58;
+    const gr=g.createRadialGradient(sx, sy, 1, sx, sy-bh*0.12, w*0.26);
+    gr.addColorStop(0,'rgba(24,19,12,.50)');
+    gr.addColorStop(0.55,'rgba(30,24,16,.22)');
+    gr.addColorStop(1,'rgba(30,24,16,0)');
+    g.fillStyle=gr;
+    g.beginPath(); g.ellipse(sx, sy-bh*0.10, w*0.24, bh*0.46, 0,0,6.283); g.fill();
   }
   if(tier>=3){
-    g.fillStyle='rgba(18,14,9,.74)';
+    // A hole is a ragged edge with daylight behind it, a lip of broken plaster
+    // on the lit side and the timbers still standing across the gap. A filled
+    // quadrilateral is a sticker.
+    const hx=px+w*0.38, hy=top+bh*0.52, rw=Math.min(w*0.13,13), rh=Math.min(bh*0.17,11);
+    const rim=(k)=>{
+      g.beginPath();
+      for(let i=0;i<=10;i++){
+        const a2=i/10*6.283, j=0.72+((i*7)%5)/9;
+        const X=hx+Math.cos(a2)*rw*j*k, Y=hy+Math.sin(a2)*rh*j*k;
+        if(i) g.lineTo(X,Y); else g.moveTo(X,Y);
+      }
+      g.closePath();
+    };
+    g.fillStyle='rgba(236,228,206,.80)'; rim(1.30); g.fill();   // broken plaster lip
+    g.fillStyle='rgba(150,138,112,.85)'; rim(1.13); g.fill();   // the rubble edge
+    g.fillStyle='rgba(16,12,8,.92)';     rim(1.00); g.fill();   // the dark inside
+    g.strokeStyle='rgba(58,44,28,.90)'; g.lineWidth=1.8;        // a timber still across it
     g.beginPath();
-    g.moveTo(px+w*0.28,top+bh*0.34); g.lineTo(px+w*0.46,top+bh*0.26);
-    g.lineTo(px+w*0.53,top+bh*0.62); g.lineTo(px+w*0.32,top+bh*0.72);
-    g.closePath(); g.fill();
-    g.strokeStyle='rgba(240,200,140,.16)'; g.lineWidth=1; g.stroke();
+    g.moveTo(hx-rw*0.3, hy-rh*1.5); g.lineTo(hx-rw*0.1, hy+rh*1.5);
+    g.stroke();
   }
   g.restore();
 }
@@ -7486,7 +7860,7 @@ function drawBld(b){
   // badly it is hurt, so the live damage effects below have to read the real
   // tier — a field at stage three is not a building on fire.
   const tier=bldTier(b);
-  const sp=bldSprite(b.type,b.owner, b.type==='plot' ? farmVariant(b) : tier);
+  const sp=bldSprite(b.type,b.owner, b.type==='plot' ? farmVariant(b) : tier, b.id>>1);
   blit(sp, px-sp.ox, py-sp.oy);
 
   // Soil that has been worked too hard looks it. The fertility model already
@@ -7584,7 +7958,8 @@ function drawBld(b){
         ctx.quadraticCurveTo(cx+6,apex-8+fl, cx,apex-6); ctx.closePath(); ctx.fill();
       }
       if(b.type==='tc'||b.type==='castle'){                // the great pennant
-        const top=b.type==='castle'?apex-18:apex-16, sp2=b.type==='castle'?15:14;
+        const m=bldMast(b.type,py,w);
+        const top=b.type==='castle'?m-18:m-16, sp2=b.type==='castle'?15:14;
         const fl=Math.sin(gameTime*2.6+b.id*1.7)*2.4;
         ctx.fillStyle=teamLight(b.owner);
         ctx.beginPath(); ctx.moveTo(cx,top);
@@ -7690,9 +8065,10 @@ function rampartWear(g,px,py,w,h,tier){
 function bldMarkBody(g,type,owner,px,py,w,h,apex){
   const cx=px+w/2, t=type;
   g.save();
-  if(t==='tc'){
+  if(t==='tc'||t==='castle'){
+    const m=bldMast(t,py,w);
     g.strokeStyle='#3A2E22'; g.lineWidth=2;
-    g.beginPath(); g.moveTo(cx,apex-16); g.lineTo(cx,apex+2); g.stroke();
+    g.beginPath(); g.moveTo(cx,m-(t==='castle'?19:16)); g.lineTo(cx,m+2); g.stroke();
   } else if(t==='barracks'){
     g.fillStyle=teamColor(owner);
     g.beginPath(); g.moveTo(px+14,py+20); g.lineTo(px+26,py+20); g.lineTo(px+26,py+29);
