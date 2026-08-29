@@ -5312,19 +5312,19 @@ const yearNo=()=>1+Math.floor(gameTime/YEAR);
 // conifers to rust.
 const SEASON=[
   {name:'Spring', short:'Spr',
-   grass:['#6E9450','#86A65E','#9EB06A','#B7BA86','#AC9062'],
+   grass:['#587617','#6B8520','#7D8D2B','#91954C','#8A7622'],
    dark:['#40682C','#4C7434','#436A28','#59853A'],
    lit:['#6E9C48','#7CAB52','#739F42','#8CBA58'],
    detail:['rgba(120,152,70,.55)','rgba(180,192,116,.50)','rgba(96,126,60,.45)','rgba(202,194,136,.42)'],
    weather:'blossom', chill:0},
   {name:'Summer', short:'Sum',
-   grass:['#6C8A4C','#7D9857','#93A263','#AEAF7C','#A98C5E'],
+   grass:['#566E18','#637A1F','#758229','#8A8C45','#87721E'],
    dark:['#3A5E28','#456B2F','#3E6224','#527C36'],
    lit:['#5E8C3C','#6C9B46','#639338','#7CAA4C'],
    detail:['rgba(108,138,64,.55)','rgba(168,180,108,.50)','rgba(88,116,56,.45)','rgba(196,186,128,.42)'],
    weather:null, chill:0},
   {name:'Autumn', short:'Aut',
-   grass:['#7B8446','#94924F','#AA9A5A','#BDA971','#A98C5E'],
+   grass:['#616A13','#767616','#887D18','#97892D','#87721E'],
    dark:['#6E4A22','#7E5A26','#653F1E','#8A6A2E'],
    lit:['#B0802E','#BE913A','#A2702A','#C89E46'],
    detail:['rgba(150,132,62,.55)','rgba(190,168,96,.50)','rgba(122,98,50,.45)','rgba(202,178,116,.42)'],
@@ -5616,6 +5616,92 @@ function decorTile(g,sx,sy,t,h,shore){
     g.stroke();
   }
 }
+// Smooth value noise on the tile grid, for the broad lighter and darker sweeps
+// across the sward. The shader has its own vnoise; this is the flat view's, and
+// it only has to be smooth and repeatable, not fast — it runs six by six per
+// chunk bake and never per frame.
+/* --------------------------- the turf texture ------------------------------
+   The sward is not a few clumps standing on a flat fill — it is thousands of
+   small marks: fine blades, patches of clover, dry straw lying through it. Per
+   tile that is unaffordable; as one tileable texture generated once and then
+   repeated it costs a single fill per chunk however dense it is.
+
+   It is drawn on transparency so the terrain colour underneath still shows
+   through, which keeps the per-tile colour blend and the seasonal repaint
+   working. Every mark is drawn again shifted by the tile size wherever it
+   crosses an edge, so the texture wraps without a seam.
+   ------------------------------------------------------------------------ */
+const TURF_TEX=96;
+let turfCanvas=null, turfPat=null;
+function turfTexture(){
+  if(turfCanvas) return turfCanvas;
+  const S=TURF_TEX;
+  const c=document.createElement('canvas'); c.width=S; c.height=S;
+  const g=c.getContext('2d');
+  let sd=0x1BADF00D>>>0;
+  const rf=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+  // draw one mark at every wrapped position it touches
+  const wrap=(x,y,f)=>{
+    for(const dx of [0,-S,S]) for(const dy of [0,-S,S]){
+      if(Math.abs(x+dx)>S+8||Math.abs(y+dy)>S+8) continue;
+      f(x+dx, y+dy);
+    }
+  };
+  // ---- fine blades, the body of the sward
+  for(let i=0;i<1500;i++){
+    const x=rf()*S, y=rf()*S, a=-1.5708+(rf()-0.5)*2.2, L=2+rf()*4.5;
+    const t=rf();
+    g.strokeStyle = t<0.42 ? 'rgba(44,62,26,'+(0.10+rf()*0.16).toFixed(2)+')'
+                  : t<0.80 ? 'rgba(126,156,68,'+(0.10+rf()*0.18).toFixed(2)+')'
+                           : 'rgba(178,186,96,'+(0.08+rf()*0.16).toFixed(2)+')';
+    g.lineWidth=0.8+rf()*0.6; g.lineCap='round';
+    wrap(x,y,(px,py)=>{
+      g.beginPath(); g.moveTo(px,py);
+      g.lineTo(px+Math.cos(a)*L, py+Math.sin(a)*L);
+      g.stroke();
+    });
+  }
+  // ---- clover: little rosettes of round leaves, in loose patches
+  for(let p2=0;p2<26;p2++){
+    const px0=rf()*S, py0=rf()*S, leaves=8+((rf()*10)|0), spread=4+rf()*7;
+    for(let i=0;i<leaves;i++){
+      const a=rf()*6.283, r=rf()*spread;
+      const x=px0+Math.cos(a)*r, y=py0+Math.sin(a)*r*0.8, rr=0.9+rf()*0.9;
+      g.fillStyle='rgba(58,102,38,'+(0.20+rf()*0.22).toFixed(2)+')';
+      wrap(x,y,(qx,qy)=>{ g.beginPath(); g.ellipse(qx,qy,rr,rr*0.82,0,0,6.283); g.fill(); });
+    }
+  }
+  // ---- dry straw lying through it, paler and flatter than the living blades
+  for(let i=0;i<420;i++){
+    const x=rf()*S, y=rf()*S, a=rf()*6.283, L=2.5+rf()*4;
+    g.strokeStyle='rgba(198,184,118,'+(0.12+rf()*0.20).toFixed(2)+')';
+    g.lineWidth=0.8;
+    wrap(x,y,(px,py)=>{
+      g.beginPath(); g.moveTo(px,py);
+      g.lineTo(px+Math.cos(a)*L, py+Math.sin(a)*L);
+      g.stroke();
+    });
+  }
+  g.lineCap='butt';
+  turfCanvas=c;
+  return c;
+}
+function turfPattern(g){
+  if(!turfPat) turfPat=g.createPattern(turfTexture(),'repeat');
+  return turfPat;
+}
+
+function swardNoise(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+  const at=(a,b)=>{
+    let h=(a*374761393+b*668265263)>>>0;
+    h=(h^(h>>>13))*1274126177>>>0;
+    return ((h^(h>>>16))>>>0)/4294967296;
+  };
+  const sx=xf*xf*(3-2*xf), sy=yf*yf*(3-2*yf);
+  const a=at(xi,yi), b=at(xi+1,yi), c=at(xi,yi+1), d=at(xi+1,yi+1);
+  return (a+(b-a)*sx) + ((c+(d-c)*sx)-(a+(b-a)*sx))*sy;
+}
 function groundChunk(cx,cy){
   const key=cx*8192+cy;
   const hit=chunkCache.get(key);
@@ -5641,18 +5727,116 @@ function groundChunk(cx,cy){
   tg.putImageData(img,0,0);
   g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
   g.drawImage(tiny, -TILE, -TILE, N*TILE, N*TILE);
+  // Pasture is never one colour. A second tiny bitmap at a coarser scale,
+  // upscaled the same way, lays broad lighter and darker sweeps across the
+  // sward — the drier rise, the damper hollow — so the ground stops reading as
+  // a flat fill with things standing on it. One extra 6x6 image per chunk.
+  {
+    const M=6, mo=document.createElement('canvas'); mo.width=M; mo.height=M;
+    const mg=mo.getContext('2d'), mi=mg.createImageData(M,M);
+    for(let j=0;j<M;j++) for(let i=0;i<M;i++){
+      const wx=cx*CH_T+i*CH_T/M, wy=cy*CH_T+j*CH_T/M;
+      // two octaves of the same value noise the terrain already uses
+      const n=swardNoise(wx*0.055, wy*0.055)*0.62 + swardNoise(wx*0.19+41, wy*0.19-17)*0.38;
+      const o=(j*M+i)*4, up=n>0.5;
+      // The dry rise goes warm and yellow, the damp hollow deep and green —
+      // not simply lighter and darker, which is what made it read as a wash.
+      mi.data[o]=up?226:30; mi.data[o+1]=up?214:58; mi.data[o+2]=up?128:22;
+      mi.data[o+3]=Math.round(Math.abs(n-0.5)*2*82);
+    }
+    mg.putImageData(mi,0,0);
+    g.drawImage(mo, -TILE, -TILE, (M)*CH_T*TILE/M+TILE*2, (M)*CH_T*TILE/M+TILE*2);
+  }
+  // The sward itself: one repeating fill, aligned to world coordinates so it
+  // carries across chunk seams. Everything below this — props, beach, fields —
+  // is drawn over it.
+  {
+    const tp=turfPattern(g);
+    if(tp){
+      g.save();
+      g.translate(-((cx*CH_T*TILE)%TURF_TEX), -((cy*CH_T*TILE)%TURF_TEX));
+      g.fillStyle=tp;
+      g.fillRect(0,0,CH_T*TILE+TURF_TEX, CH_T*TILE+TURF_TEX);
+      g.restore();
+    }
+  }
   for(let j=0;j<CH_T;j++) for(let i=0;i<CH_T;i++){
     const tx=cx*CH_T+i, ty=cy*CH_T+j;
     if(tx>=MAP_W||ty>=MAP_H) continue;
     const t=terrain[ty*MAP_W+tx];
     if(t===WATER) continue;
     const sx=i*TILE, sy=j*TILE, h=(tx*73856093^ty*19349663)>>>0;
-    if(t!==4&&(h&7)<3){
-      g.fillStyle=DETAIL[(h>>3)&3];
-      const ox=6+((h>>5)&15), oy=6+((h>>9)&15);
-      g.fillRect(sx+ox, sy+oy, 2, 3);
-      if((h>>13&3)===0) g.fillRect(sx+ox+3, sy+oy+1, 2, 2);
-    } else if(t===4&&(h&15)===0){
+    if(t!==4){
+      // Tufts of grass rather than a fleck. Each is two or three blades
+      // springing from one root and leaning the same way as its neighbours,
+      // with a shadow at the base — that lean is what stops a field of tufts
+      // reading as scattered dots. How many a tile carries varies, so the
+      // sward is patchy the way grazed ground is.
+      const base=GRASS_RGB[t]||GRASS_RGB[0];
+      // A blade is a tapered leaf, not a hair: wide at the root, narrowing to
+      // a point, and lit from dark at the base to bright at the tip. That
+      // gradient and that width are what make stylised grass read as grass
+      // rather than as scratches on the ground.
+      // Close to the ground they stand in. Pushed far from the base colour they
+      // read as dark blobs laid on the sward instead of growing out of it.
+      const root='rgb('+Math.max(0,base[0]-26)+','+Math.max(0,base[1]-22)+','+Math.max(0,base[2]-16)+')';
+      const tipc='rgb('+Math.min(255,base[0]+30)+','+Math.min(255,base[1]+36)+','+Math.max(0,base[2]+4)+')';
+      const worn=(h&63)===0;
+      if(worn){
+        g.fillStyle='rgba(120,101,68,.30)';
+        const wx2=sx+4+((h>>5)&13), wy2=sy+4+((h>>9)&13);
+        g.beginPath(); g.ellipse(wx2, wy2, 5+((h>>15)&3), 3+((h>>17)&2), (h>>19)&3, 0, 6.283); g.fill();
+      }
+      // Density follows the same noise the colour does, so the thick grass is
+      // in the darker damp hollows and the thin grass on the pale dry rises.
+      const lush=swardNoise(tx*0.11, ty*0.11)*0.68 + swardNoise(tx*0.31+41, ty*0.31-17)*0.32;
+      // The turf texture now carries the body of the sward, so these are only
+      // the taller clumps standing proud of it — a handful, not a carpet.
+      const n=worn?0:(lush>0.62?1+((h>>3)&1):0);
+      for(let k=0;k<n;k++){
+        const hk=(h^(k*2654435761))>>>0;
+        const ox=sx+3+(hk%23), oy=sy+4+((hk>>7)%21);
+        // Blades splay out of one root in a fan rather than all leaning the
+        // same way — a clump, the way grass actually grows.
+        const blades=3+((hk>>11)&1);
+        // The fan opens upward. Letting it face any direction at all made each
+        // clump a starburst rather than grass standing in ground.
+        const face=-1.5708+(((hk>>17)&7)/7-0.5)*0.9;
+        g.fillStyle='rgba(26,32,18,.22)';
+        g.beginPath(); g.ellipse(ox, oy+0.8, 3.2, 1.2, 0, 0, 6.283); g.fill();
+        for(let bl=0;bl<blades;bl++){
+          const hb=(hk^(bl*40503))>>>0;
+            const spread=(bl-(blades-1)/2)*0.44 + ((hb&7)/7-0.5)*0.22;
+          const a=face+spread;                    // fanned, and mostly upward
+          const L=4.2+((hb>>4)&7)*0.7;
+          const wdt=1.5+((hb>>8)&1)*0.5;
+          // the blade arches: the tip falls away from the root's direction
+          const arch=0.55+((hb>>10)&3)*0.16;
+          const tx2=ox+Math.cos(a)*L*0.55+Math.cos(a+arch)*L*0.45;
+          const ty2=oy+Math.sin(a)*L*0.55+Math.sin(a+arch)*L*0.45;
+          const mx=ox+Math.cos(a)*L*0.55, my=oy+Math.sin(a)*L*0.55;
+          const px2=-Math.sin(a)*wdt, py2=Math.cos(a)*wdt;
+          // Dark root, bright tip, as two flat fills rather than a gradient.
+          // A gradient object per blade is about twelve hundred allocations a
+          // chunk and took the bake from under a millisecond to nearly five;
+          // painting the upper half over the whole blade reads the same and
+          // costs nothing.
+          g.fillStyle=root;
+          g.beginPath();
+          g.moveTo(ox+px2, oy+py2);
+          g.quadraticCurveTo(mx+px2*0.5, my+py2*0.5, tx2, ty2);
+          g.quadraticCurveTo(mx-px2*0.5, my-py2*0.5, ox-px2, oy-py2);
+          g.closePath(); g.fill();
+          g.fillStyle=tipc;
+          g.beginPath();
+          g.moveTo(mx+px2*0.5, my+py2*0.5);
+          g.lineTo(tx2, ty2);
+          g.lineTo(mx-px2*0.5, my-py2*0.5);
+          g.closePath(); g.fill();
+        }
+      }
+    }
+    if(t===4&&(h&15)===0){
       g.fillStyle='rgba(120,110,88,.5)';
       g.fillRect(sx+8+((h>>5)&11), sy+8+((h>>9)&11), 3, 2);
     }
@@ -5924,8 +6108,11 @@ function draw(){
     if(sx<-360||sy<-360||sx>W+360||sy>H+360) continue;
     const ap=apronSprite();
     ctx.globalAlpha=f.building?0.35*(1-(f.build||0)/Math.max(1,BLD.farm.build)):1;
-    blit(ap, Math.round(f.tx*TILE+BLD.farm.w*TILE/2-cam.x-ap.w/2),
-             Math.round(f.ty*TILE+BLD.farm.h*TILE/2-cam.y-ap.h/2));
+    // Centred on the lattice, not on the building. The steading is three tiles
+    // wide and the slots step by two, so centring on the building would leave
+    // the apron half a tile off the fields it is meant to be showing.
+    blit(ap, Math.round((f.tx+1)*TILE-cam.x-ap.w/2),
+             Math.round((f.ty+1)*TILE-cam.y-ap.h/2));
     ctx.globalAlpha=1;
   }
 
@@ -6494,9 +6681,12 @@ function farmVariant(b){
 // The apron: broken ground with the first shoots up, laid over the block of
 // slots a steading owns. It is one cached sprite, drawn once per steading, so a
 // dozen farms cost a dozen blits rather than a thousand furrows.
-const APRON_SLOTS=2;                       // rings of field slots the apron covers
+const APRON_SLOTS=1;                       // rings of field slots the apron covers
 function apronSprite(){
-  const side=(APRON_SLOTS*2+1)*FIELD_PITCH*TILE;
+  // Exactly the extent of the lattice it stands for: the slots reach
+  // APRON_SLOTS rings out in each direction and each slot is a field wide, so
+  // the ground drawn and the ground that can be built on are the same square.
+  const side=(APRON_SLOTS*2*FIELD_PITCH+2)*TILE;
   return sprite('apron|'+side, side, side, (g,w,h)=>{
     const cx=w/2, cy=h/2;
     // A soft-edged square of turned earth rather than a hard rectangle, so it
@@ -6562,23 +6752,13 @@ function fieldBody(g,px,py,w,h,packed){
   const stage=code<3?code:3;
   const cut=code<3?0:(code-3)/4;            // 0 = untouched, 1 = all but carried off
 
-  // A field is an enclosed thing. The fence sits on the outer edge, a strip of
-  // untilled headland runs inside it — the ground a plough has to turn on — and
-  // the furrows only start after that. Without the enclosure a row of plots
-  // reads as texture on the grass rather than as somebody's fields.
-  const fx0=px+2.5, fy0=py+3.5, fx1=px+w-2.5, fy1=py+h-2.5;
-  const HEAD=2.6;                                    // headland width
-  const x0=fx0+HEAD, x1=fx1-HEAD, ty0=fy0+HEAD, ty1=fy1-HEAD*0.6;
-  const rows=8, span=ty1-ty0, rowH=span/rows;
-
-  // ---- headland: rough grass and bare turning ground, under everything
-  g.fillStyle='#7C8048';
-  g.fillRect(fx0, fy0, fx1-fx0, fy1-fy0);
-  {
-    const hp=grainPat(g,'turf',64,9,GRAIN_DARK,GRAIN_LIGHT,0.30);
-    if(hp){ g.save(); g.beginPath(); g.rect(fx0,fy0,fx1-fx0,fy1-fy0); g.clip();
-      g.fillStyle=hp; g.fillRect(fx0,fy0,fx1-fx0,fy1-fy0); g.restore(); }
-  }
+  // A field is a piece of tilled ground and nothing else — no fence, no hedge,
+  // no headland. An earlier pass enclosed them and they read as boxes sitting
+  // on the grass rather than as ground belonging to the steading; the reference
+  // has none of that, and neither does this. It runs to the edge of its tile so
+  // that fields laid side by side make one worked block.
+  const x0=px+0.5, x1=px+w-0.5, ty0=py+1, ty1=py+h-1;
+  const rows=7, span=ty1-ty0, rowH=span/rows;
 
   // ---- turned earth, then the ridges standing out of it
   g.fillStyle='#8A6636'; g.fillRect(x0, ty0, x1-x0, ty1-ty0);
@@ -6603,7 +6783,6 @@ function fieldBody(g,px,py,w,h,packed){
       const hx=(i*2654435761)>>>0;
       g.fillRect(x0+1+(hx%Math.max(4,(x1-x0-4))), ty0+2+((hx>>7)%Math.max(4,(ty1-ty0-6))), 2.6, 1.8);
     }
-    fieldFence(g,fx0,fy0,fx1,fy1);
     return;
   }
 
@@ -6636,11 +6815,26 @@ function fieldBody(g,px,py,w,h,packed){
       const sx=x0+2+k*(x1-x0-4)/(n-1)+((hx>>3)%3)-1;
       const H=(3+t*9)*(0.74+((hx>>9)%7)/12);
       const lean=(((hx>>5)&3)-1.5);
-      g.strokeStyle=crop.stalk; g.lineWidth=1.2;
-      g.beginPath();
-      g.moveTo(sx, yy+2.4);
-      g.quadraticCurveTo(sx+lean*0.7, yy+2.4-H*0.6, sx+lean*1.6, yy+2.4-H);
-      g.stroke();
+      // Young growth is a tuft, not a single stalk — the same crown of blades
+      // the steading's apron carries, so a new field and the ground it was cut
+      // out of read as the same crop at different ages.
+      if(stage<3){
+        g.strokeStyle=crop.stalk; g.lineWidth=1.3; g.lineCap='round';
+        for(let bl=-1;bl<=1;bl++){
+          const bw=bl*1.7+lean*0.5;
+          g.beginPath();
+          g.moveTo(sx, yy+2.4);
+          g.quadraticCurveTo(sx+bw*0.5, yy+2.4-H*0.55, sx+bw, yy+2.4-H*0.92);
+          g.stroke();
+        }
+        g.lineCap='butt';
+      } else {
+        g.strokeStyle=crop.stalk; g.lineWidth=1.2;
+        g.beginPath();
+        g.moveTo(sx, yy+2.4);
+        g.quadraticCurveTo(sx+lean*0.7, yy+2.4-H*0.6, sx+lean*1.6, yy+2.4-H);
+        g.stroke();
+      }
       if(stage===3){                       // the head of the crop, only when ripe
         g.fillStyle=crop.ear;
         g.beginPath();
@@ -6682,36 +6876,8 @@ function fieldBody(g,px,py,w,h,packed){
     g.fillStyle='rgba(255,238,170,.10)';
     g.fillRect(x0, ty0, x1-x0, ty1-ty0);
   }
-  fieldFence(g,fx0,fy0,fx1,fy1);
 }
 
-// The enclosure. At this size post-and-rail on every side turns a field into a
-// crate, so what reads instead is what actually bounds a field: a raised baulk
-// of earth catching the light on its far edge and shadowed on the near one,
-// with posts only at the corners and either side of the gateway.
-function fieldFence(g,fx0,fy0,fx1,fy1){
-  const gate0=fx0+(fx1-fx0)*0.40, gate1=fx0+(fx1-fx0)*0.60;
-  // the bank: light along the top and left, shadow along the bottom and right
-  g.strokeStyle='rgba(214,192,140,.42)'; g.lineWidth=1.4;
-  g.beginPath();
-  g.moveTo(fx0, fy1); g.lineTo(fx0, fy0); g.lineTo(fx1, fy0);
-  g.stroke();
-  g.strokeStyle='rgba(38,28,16,.34)'; g.lineWidth=1.4;
-  g.beginPath();
-  g.moveTo(fx1, fy0); g.lineTo(fx1, fy1);
-  g.lineTo(gate1, fy1); g.stroke();
-  g.beginPath(); g.moveTo(gate0, fy1); g.lineTo(fx0, fy1); g.stroke();
-  // a hint of rail along the far edge only, where it would be seen against sky
-  g.strokeStyle='rgba(150,124,80,.55)'; g.lineWidth=1;
-  g.beginPath(); g.moveTo(fx0+1, fy0-1.6); g.lineTo(fx1-1, fy0-1.6); g.stroke();
-
-  const post=(x,y)=>{
-    g.fillStyle='rgba(32,24,14,.34)'; g.fillRect(x-0.4, y-3.2, 2.2, 4.4);
-    g.fillStyle='#6E5735';            g.fillRect(x-1.1, y-3.8, 2.2, 4.4);
-  };
-  post(fx0,fy0); post(fx1,fy0); post(fx0,fy1); post(fx1,fy1);
-  post(gate0,fy1); post(gate1,fy1);
-}
 function bldBody(g,type,owner,tier,px,py,w,h){
   const d=BLD[type];
   g.fillStyle='rgba(20,16,9,.22)';
@@ -6961,8 +7127,13 @@ function bldBody(g,type,owner,tier,px,py,w,h){
       g.beginPath(); g.moveTo(cx,ap+2); g.lineTo(cx,ap-13); g.stroke();
     }
   }
-  g.strokeStyle='rgba(31,25,19,.55)'; g.lineWidth=1;
-  g.strokeRect(px+2.5, wallTop+0.5, w-5, (py+h)-wallTop-3);
+  // Every building gets an outline to sit it on the ground. A field must not:
+  // the outline is what was drawing a grid over a block of them and stopping
+  // neighbouring fields from reading as one worked piece of land.
+  if(!isFarm){
+    g.strokeStyle='rgba(31,25,19,.55)'; g.lineWidth=1;
+    g.strokeRect(px+2.5, wallTop+0.5, w-5, (py+h)-wallTop-3);
+  }
   // A field carries its crop and its stage in `tier`, not a damage state, and
   // there is no such thing as a burning furrow. Everything else takes its
   // scorches and its cracks as before.
@@ -8247,6 +8418,21 @@ function buildingCards(b){
       enabled: !s.aging&&canPay(PLAYER,AGES[nx].cost),
       run:()=>{ if(!startAge(PLAYER)) sfx('error'); }});
   }
+  if(b.type==='farm'&&!b.building){
+    const free=fieldSlots(b).filter(sl=>sl.ring<=APRON_SLOTS&&tileFree(sl.tx,sl.ty,2,2,0,'plot')).length;
+    const hands=units(PLAYER).filter(u=>UNIT[u.type].crop!==undefined&&!u.dead).length;
+    card({name:'Break the Ground', kind:'age', cost:{f:0,w:0,g:0},
+      costHtml:free?('<i>'+free+' slot'+(free===1?'':'s')+' open</i>'):'<i>all under crop</i>',
+      tip:'Sow the steading’s own ground. Every open slot of the apron is broken and sown at once, each with whatever the coming season favours, and the hands who know that crop are sent to it. It stops when the timber, the seed or the ground runs out.',
+      enabled:free>0&&hands>0&&canPay(PLAYER,bldCost(PLAYER,'plot')),
+      run:()=>{
+        const n=layBlock(b);
+        if(n){ log(n===1?'A field is broken.':n+' fields are broken.'); sfx('build'); }
+        else sfx('error');
+        updateHUD(); updatePanel();
+      }});
+  }
+
   if(garrisonCap(b)&&b.garr.length){
     card({name:'Empty It', cost:{f:0,w:0,g:0}, costHtml:b.garr.length+' inside',
       tip:'Send everyone sheltering here back outside.',
@@ -9206,11 +9392,22 @@ function fieldSlots(farm){
   out.sort((a,b)=>a.ring-b.ring||a.d2-b.d2);
   return out;
 }
-// The nearest steading to a point that still has room for another field.
+// Whether a steading still has ground of its own left to break.
+function apronFree(farm){
+  for(const sl of fieldSlots(farm)){
+    if(sl.ring>APRON_SLOTS) break;
+    if(tileFree(sl.tx, sl.ty, 2, 2, 0, 'plot')) return true;
+  }
+  return false;
+}
+// The nearest steading to a point that still has room for another field. A
+// steading whose apron is full is not offered: its ground is spoken for, and
+// the answer to wanting more fields is another steading, not fields wandering
+// off into the grass beside this one.
 function steadingFor(o,wx,wy){
   let best=null, bd=1e9;
   for(const f of builds(o,'farm')){
-    if(f.building) continue;
+    if(f.building||!apronFree(f)) continue;
     const dd=Math.hypot(f.x-wx, f.y-wy);
     if(dd<bd){ bd=dd; best=f; }
   }
@@ -9219,11 +9416,54 @@ function steadingFor(o,wx,wy){
 // The slot a new field should take, given where the player or the opponent
 // pointed. Returns null when there is no steading to belong to, in which case
 // the field goes exactly where it was asked for.
+// Lay as much of the steading's apron under crop as the purse and the seed
+// will carry, in one order. The apron already shows the grid; this fills it.
+function layBlock(farm){
+  const o=farm.owner, s=sides[o];
+  const hands=units(o).filter(u=>UNIT[u.type].crop!==undefined&&!u.dead);
+  if(!hands.length){ log('You have no farmers. A steading raises them.',true); sfx('error'); return 0; }
+  let laid=0;
+  const sown=Object.create(null);          // what this order has already put in
+  for(const sl of fieldSlots(farm)){
+    if(sl.ring>APRON_SLOTS) break;                 // only the ground it came with
+    if(!tileFree(sl.tx, sl.ty, 2, 2, 0, 'plot')) continue;
+    if(!canPay(o, bldCost(o,'plot'))) break;
+    // Sow what the coming season is kindest to, and send a hand who knows it.
+    let best=0, bv=-1e9, any=false;
+    for(let i=0;i<CROP.length;i++){
+      if(s.seed<CROP[i].seed) continue;
+      any=true;
+      const at=Math.floor((gameTime+CROP[i].time)/SEASON_LEN)%4;
+      // Season first, then a hand who knows it, less a penalty for what this
+      // order has already sown. A block that is all rye is not a farm, and it
+      // leaves three of the four trades standing about.
+      const v=CROP[i].yield*CROP[i].season[at]/CROP[i].time
+            + (hands.some(u=>UNIT[u.type].crop===i)?0.9:0)
+            - (sown[i]||0)*0.9;
+      if(v>bv){ bv=v; best=i; }
+    }
+    if(!any) break;                                // out of seed, not out of ideas
+    sown[best]=(sown[best]||0)+1;
+    const own=hands.filter(u=>UNIT[u.type].crop===best);
+    const crew=(own.length?own:hands)
+      .slice().sort((a,c)=>Math.hypot(a.x-sl.tx*TILE,a.y-sl.ty*TILE)-Math.hypot(c.x-sl.tx*TILE,c.y-sl.ty*TILE))
+      .slice(0,2);
+    const b=tryPlace('plot', sl.tx, sl.ty, o, crew);
+    if(!b) continue;
+    b.crop=best; b.nextCrop=best; laid++;
+  }
+  return laid;
+}
+
 function fieldSlot(o,wx,wy){
   const farm=steadingFor(o,wx,wy);
   if(!farm) return null;
   let best=null, bd=1e9;
   for(const sl of fieldSlots(farm)){
+    // Never past the apron. The steading draws the ground it owns, and a field
+    // has to land on ground you can already see — an extra one out in the grass
+    // beyond it is exactly what the apron exists to prevent.
+    if(sl.ring>APRON_SLOTS) break;
     if(!tileFree(sl.tx, sl.ty, 2, 2, 0, 'plot')) continue;
     // prefer the slot nearest where they pointed, but ring order still wins
     const d=Math.hypot(sl.tx*TILE+TILE-wx, sl.ty*TILE+TILE-wy) + sl.ring*46;

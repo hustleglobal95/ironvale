@@ -245,6 +245,70 @@ const { chromium, wrap, boot, hud } = require('./harness');
      ' against ' + (planted && planted.alien) + ')',
      planted && planted.own > 1 && planted.alien < 1 && planted.sown);
 
+  // ---- fields belong to a steading, and lie in its block
+  const block = await page.evaluate(() => {
+    const g = window.__IV, s = g.sides()[0];
+    s.w = 9999; s.f = 9999; s.seed = 9999;
+    // Earlier tests left fields and a steading of their own on this map, and
+    // they belong to a different lattice. Clear the ground so what is measured
+    // here is this steading's block and nothing else.
+    g.ents().forEach(e => { if (e.kind === 'bld' && e.owner === 0 && (e.type === 'plot' || e.type === 'farm')) e.dead = true; });
+    g.touch();
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    let farm = null;
+    for (let r = 6; r < 18 && !farm; r++) for (let a = 0; a < 24 && !farm; a++) {
+      const tx = Math.round(tc.tx + Math.cos(a * 0.262) * r), ty = Math.round(tc.ty + Math.sin(a * 0.262) * r);
+      if (g.free(tx, ty, 3, 2, 0, 'farm')) farm = g.place('farm', tx, ty, null);
+    }
+    if (!farm) return null;
+    farm.building = 0;
+    // A steading owns one ring of seven slots. Whether trees happen to be
+    // standing in five of them is a fact about this map, not about the order,
+    // so clear the scrub off its own ground before measuring what it sows.
+    g.ents().forEach(e => { if (e.kind === 'res' && Math.abs(e.x - farm.x) < 130 && Math.abs(e.y - farm.y) < 130) e.dead = true; });
+    g.touch();
+    for (const t of ['ploughman', 'gardener', 'flaxman', 'ryeman']) g.spawn(0, t, farm.x + 20, farm.y + 20);
+
+    // a slot asked for anywhere near the steading comes back on its lattice
+    const sl = g.slot(0, farm.x + 300, farm.y + 300);
+    const onLattice = sl && ((sl.tx - farm.tx) % 2 === 0) && ((sl.ty - farm.ty) % 2 === 0);
+    const overlaps = sl && sl.tx < farm.tx + 3 && sl.tx + 2 > farm.tx && sl.ty < farm.ty + 2 && sl.ty + 2 > farm.ty;
+
+    const before = g.ents().filter(e => e.type === 'plot' && e.owner === 0 && !e.dead).length;
+    g.sel().length = 0; g.sel().push(farm); g.panel();
+    const btn = [...document.querySelectorAll('.card')].find(c => /Break the Ground/.test(c.textContent));
+    if (btn) btn.click();
+    const fields = g.ents().filter(e => e.type === 'plot' && e.owner === 0 && !e.dead);
+    const crops = new Set(fields.map(f => f.crop));
+    // every field the order laid sits on the lattice and touches the block
+    const strayed = fields.filter(f => ((f.tx - farm.tx) % 2) || ((f.ty - farm.ty) % 2) ||
+      Math.max(Math.abs(f.tx - farm.tx), Math.abs(f.ty - farm.ty)) > 10).length;
+    // A field must land on ground the steading already shows. The apron covers
+    // one ring of slots; anything deeper is a field out in the grass, which is
+    // the thing the apron exists to prevent.
+    const maxRing = fields.length ? Math.max(...fields.map(f =>
+      Math.max(Math.abs((f.tx - farm.tx) / 2), Math.abs((f.ty - farm.ty) / 2)))) : 0;
+    return { onLattice, overlaps, before, laid: fields.length - before, crops: crops.size, strayed, maxRing, hadBtn: !!btn };
+  });
+  ok('a steading offers to break its own ground', block && block.hadBtn);
+  ok('a field asked for anywhere lands on the steading lattice', block && block.onLattice && !block.overlaps);
+  ok('the order breaks a block of them at once (' + (block && block.laid) + ')', block && block.laid >= 4);
+  ok('and none of them strays off the block', block && block.strayed === 0);
+  ok('and none of them lands off the apron (deepest ring ' + (block && block.maxRing) + ')',
+     block && block.maxRing <= 1);
+  ok('it sows more than one crop (' + (block && block.crops) + ')', block && block.crops >= 2);
+
+  // ---- rye draws as rye, not as wheat
+  const art = await page.evaluate(() => {
+    const g = window.__IV;
+    const f = g.ents().find(e => e.type === 'plot' && e.owner === 0);
+    if (!f) return null;
+    const seen = [];
+    for (let c = 0; c < 4; c++) { f.crop = c; f.stage = 3; seen.push(g.variant(f)); }
+    return { seen, distinct: new Set(seen).size };
+  });
+  ok('each crop draws as itself (' + (art && art.seen.join(',')) + ')', art && art.distinct === 4);
+
   const h = await hud(page);
   ok('the game is still running', h.over === 'none');
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');

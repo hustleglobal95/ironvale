@@ -79,8 +79,22 @@ ok('minimap right-click orders an advance', far);
 
 // --- double click selects the type on screen
 await page.evaluate(()=>{ const g=window.__IV;
+  // The step above marched these archers clear across the valley on an
+  // attack-move, and the valley now holds four crowns and a marauder camp, so
+  // a good few of them do not come back. Whether they survive that trip is a
+  // question about the map, not about whether a double click selects a type,
+  // so make the group up to strength and clear what is standing over them
+  // before measuring the click.
+  const k=g.ents().find(e=>e.owner===0&&e.type==='king');
+  let have=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead).length;
+  while(have<6){ g.spawn(0,'archer',k.x+40,k.y+40); have++; }
+  const alive=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead);
+  const c0=alive[0];
+  g.ents().forEach(e=>{ if(e.kind==='unit'&&e.owner!==0&&Math.hypot(e.x-c0.x,e.y-c0.y)<260) e.dead=true; });
+  alive.forEach(u=>{ u.hp=u.maxHp; });
+  g.touch();
   // hold the archers still and put them together, then double-click one
-  const a=g.ents().filter(e=>e.type==='archer'&&e.owner===0);
+  const a=g.ents().filter(e=>e.type==='archer'&&e.owner===0&&!e.dead);
   const c=a[0];
   a.forEach((u,i)=>{ u.x=c.x+(i%3)*26; u.y=c.y+Math.floor(i/3)*26; u.task='idle'; u.target=null; u.am=null; });
   g.go(c.x,c.y); g.sel().length=0; });
