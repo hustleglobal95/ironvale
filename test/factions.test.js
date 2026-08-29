@@ -26,7 +26,13 @@ const { chromium, wrap, boot, hud } = require('./harness');
       Math.hypot(c.x - tc.x, c.y - tc.y) > 600 && Math.hypot(c.x - etc.x, c.y - etc.y) > 600);
   }));
 
-  await page.evaluate(() => { for (const c of window.__IV.ents()) if (c.type === 'camp') c.spawnT = 0.2; });
+  // Nothing leaves a stockade until the settlement has had its head start, so
+  // wind the clock past it before asking the camps for anything.
+  await page.evaluate(() => {
+    const g = window.__IV;
+    g.setTime(g.pace().raidStart + 10);
+    for (const c of g.ents()) if (c.type === 'camp') c.spawnT = 0.2;
+  });
   await page.waitForTimeout(6000);
   const raiders = await page.evaluate(() => window.__IV.ents().filter(e => e.type === 'raider').length);
   ok('camps send out raiders (' + raiders + ')', raiders >= 2);
