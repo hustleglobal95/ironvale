@@ -29,7 +29,21 @@ upgrade lines, and each carries its own set of chronicle objectives.
 
 **Military.** Militia, spearmen, archers, skirmishers, scouts, knights, rams and
 mangonels, with upgrade lines that retroactively buff units already on the field.
-Select, attack-move, patrol, hold ground, garrison, and control groups.
+Select, attack-move, patrol, hold ground, garrison, and control groups. A
+spearman is the quickest thing in the game to raise and a mangonel the slowest,
+so the roster is a ladder rather than a menu. Every hall that raises soldiers
+musters them in front of its own door the moment it is built, and can be left a
+standing order to keep raising whatever it last finished — it stops by itself
+the moment the stores or the population run out. A ring over each hall says what
+is being made and how much is queued; a hall with nothing to do says so.
+
+**The clock.** Nothing marches for the first five minutes and no stockade lets a
+raider out for the first three, because a settlement that has not been raised
+cannot be defended. After that the war bands start ninety-six seconds apart and
+close to thirty as the war goes on, and a crown sends a band rather than
+everything it owns — the rest stay home as a guard. The watch on the top bar
+counts the quiet down, then reads your soldiers against the largest band anyone
+at war with you has ready to send.
 
 **The king.** One per side, with an aura that strengthens nearby troops. Ctrl+A
 deliberately leaves him out of a mass selection so he is never swept into a
@@ -41,7 +55,7 @@ standard and hold it for sixty seconds. Planting it is not a quiet act. They see
 it, they come off their raid clock, and everything they have turns toward the
 flag.
 
-**The year turns.** Four minutes to the year, a minute to the season. Spring is
+**The year turns.** Eight minutes to the year, two to the season. Spring is
 pale and full of blossom, summer is the valley at its best, autumn turns the
 broadleaves gold and drops leaves across the field, winter greys the grass,
 strips the trees and snows. It is not a filter over the top: the ground palette
@@ -227,6 +241,7 @@ npm test
 | `view.test.js` | The 3D view: that it builds, that a click lands on the pixel it was aimed at, that selecting, ordering and building all work through the camera, and that elevation never reaches the simulation |
 | `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, and that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
+| `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
 
 Individual suites: `npm run test:water`, and so on.
 
@@ -251,7 +266,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the eight suites
+test/*.test.js         the fifteen suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block
@@ -360,14 +375,21 @@ a 148×148 map viable.
 
 ### Known flaky assertions
 
-Two of the click-reliability assertions fail about one run in four, and both are
-the same thing: marauder raiders wander across the map while the suite is
-clicking on a probe unit, and a hostile figure standing on top of the probe wins
-the pick. The game is behaving correctly — a raider is not yours to select — but
-the test cannot control where the raiders walk. The mixer assertion in
-`effects.test.js` fails occasionally for an unrelated reason: headless Chromium
-sometimes never applies a scheduled parameter change under its null audio sink,
-so the slider moves and the bus does not.
+The raider flake is fixed. Two assertions used to fail about one run in four
+because a marauder wandering over the probe unit won the pick, and a click on a
+raider selects nothing — which read as the click failing. The diagnosis was
+right and the fix was in the wrong place: the suite cleared hostiles around
+where the probe had been and then moved the probe somewhere else. It clears
+around where the probe now is.
+
+What is left is environmental rather than the game's fault. Two assertions
+depend on how fast the machine runs rather than on what the game does, and
+fail when the whole suite is run on a loaded box while passing on their own:
+the mixer assertion in `effects.test.js` and the sword-over-the-bed one in
+`audio.test.js` (headless Chromium sometimes never applies a scheduled
+parameter change under its null audio sink), and the four-farmhands assertion
+in `harvest.test.js`, which waits a fixed number of wall seconds for a fixed
+number of game seconds to pass. Run a suite on its own before believing it.
 
 ### Why the file has no `<html>` tag
 

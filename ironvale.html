@@ -1637,21 +1637,44 @@ function damageOf(src,tgt){
 }
 
 /* ----------------------- map generation ----------------------- */
+// One smooth value-noise field over the whole map at a given cell size. Both
+// terrain octaves come out of the same generator so a seed still decides the
+// map completely, and the caller decides how coarse each one is.
+function noiseField(cell){
+  const gw=Math.ceil(MAP_W/cell)+2, gh=Math.ceil(MAP_H/cell)+2, g=new Float32Array(gw*gh);
+  for(let i=0;i<g.length;i++) g[i]=rnd();
+  const at=(x,y)=>g[Math.min(gh-1,y)*gw+Math.min(gw-1,x)];
+  return (x,y)=>{
+    const fx=x/cell, fy=y/cell, ix=fx|0, iy=fy|0, ax=fx-ix, ay=fy-iy;
+    const sx=ax*ax*(3-2*ax), sy=ay*ay*(3-2*ay);
+    return (at(ix,iy)*(1-sx)+at(ix+1,iy)*sx)*(1-sy)
+         + (at(ix,iy+1)*(1-sx)+at(ix+1,iy+1)*sx)*sy - 0;
+  };
+}
 function genMap(){
   terrain=new Uint8Array(MAP_W*MAP_H);
   chunkCache.clear();
-  const CS=7, gw=Math.ceil(MAP_W/CS)+2, gh=Math.ceil(MAP_H/CS)+2, g=[];
-  for(let i=0;i<gw*gh;i++) g.push(rnd());
-  const at=(x,y)=>g[Math.min(gh-1,y)*gw+Math.min(gw-1,x)];
+  // Two fields, not one. A broad moisture field decides what KIND of ground a
+  // stretch of the valley is - a damp hollow, an ordinary meadow, a dry rise -
+  // and a finer field varies the ground inside it. One field cut into equal
+  // bands gives contour rings of the same green, which is mottling rather than
+  // country: it is why the whole map used to read as a single colour with
+  // marks on it.
+  const moist=noiseField(15), fine=noiseField(6);
   for(let y=0;y<MAP_H;y++) for(let x=0;x<MAP_W;x++){
-    const fx=x/CS, fy=y/CS, ix=fx|0, iy=fy|0, ax=fx-ix, ay=fy-iy;
-    const sx=ax*ax*(3-2*ax), sy=ay*ay*(3-2*ay);
-    const v=(at(ix,iy)*(1-sx)+at(ix+1,iy)*sx)*(1-sy)+(at(ix,iy+1)*(1-sx)+at(ix+1,iy+1)*sx)*sy;
-    const j=v+(rnd()-0.5)*0.07;
-    terrain[y*MAP_W+x]= j<0.36?0 : j<0.50?1 : j<0.64?2 : 3;
+    const m=moist(x,y), f=fine(x,y);
+    const v=m*0.58+f*0.42+(rnd()-0.5)*0.05;
+    // The dry band is meant to be the exception. Cut it high, or half the
+    // valley comes up as a rise and the country reads as a desert with a lawn
+    // round the edge.
+    terrain[y*MAP_W+x] = v<0.36?0 : v<0.45?1 : v<0.55?2 : v<0.69?3 : 4;
   }
-  for(let k=0;k<Math.round(12*(MAP_W*MAP_H)/4624);k++){
+  // A few bare scrapes, but only where the ground was already dry. Bare earth
+  // in the middle of a damp hollow is a sticker; on a dry rise it is a place
+  // the turf gave up.
+  for(let k=0;k<Math.round(14*(MAP_W*MAP_H)/4624);k++){
     const cx=ri(3,MAP_W-4), cy=ri(3,MAP_H-4), rad=ri(2,4);
+    if(moist(cx,cy)<0.56) continue;
     for(let y=cy-rad;y<=cy+rad;y++) for(let x=cx-rad;x<=cx+rad;x++){
       if(x<0||y<0||x>=MAP_W||y>=MAP_H) continue;
       if(Math.hypot(x-cx,y-cy)<=rad-rnd()*1.4) terrain[y*MAP_W+x]=4;
@@ -1835,6 +1858,7 @@ function addRes(type,tx,ty){
     x:tx*TILE+TILE/2, y:ty*TILE+TILE/2, amount:info.amount, max:info.amount,
     r:type==='tree'?11:type==='fish'?10:9, wob:rnd()*6.28};
   if(type==='berry'){ e.amount=e.max=berryKind(e).amount; }
+  if(type==='tree') markCanopy();          // the wood's own shade has changed
   ents.push(e); return e;
 }
 function cluster(type,cx,cy,rad,n){
@@ -2702,6 +2726,7 @@ function updateUnit(u,dt){
             } else {
               if(felled.type==='tree'&&onScreen(felled.x,felled.y,60)){ sfx('timber'); treeFall(felled); }
               felled.dead=true;
+              if(felled.type==='tree') clearCanopyAt(felled.x, felled.y);
               u.resT=nearestRes(u.x,u.y,key,360)||null;
             }
           }
@@ -3312,11 +3337,9 @@ const SFX={
     this.amb.gain.setTargetAtTime(on*this.ambVol*(1-Math.min(0.49, env.battle*0.49)), t, 0.30);
     if(!on) return;
 
-    // Wind gusts on a slow wander rather than a sine, so it never sounds cyclic.
-    this.gustPhase+=dt*(0.06+Math.random()*0.02);
-    const g1=0.5+0.5*Math.sin(this.gustPhase*1.7);
-    const g2=0.5+0.5*Math.sin(this.gustPhase*0.61+1.3);
-    const gust=Math.min(1,(g1*0.65+g2*0.55));
+    // The gust the valley is leaning in, so the wind you hear and the wind you
+    // can see are the same wind.
+    const gust=WIND;
     this.wind.g.gain.setTargetAtTime(0.20+gust*0.20, t, 0.6);
     this.wind.f.frequency.setTargetAtTime(300+gust*180, t, 0.9);
     this.gust.g.gain.setTargetAtTime(gust*gust*0.11, t, 0.8);
@@ -5191,6 +5214,13 @@ function frame(now){
 }
 function frameBody(now){
   let dt=Math.min(0.05,(now-last)/1000); last=now;
+  // The wind. One number for the whole valley, wandering on two periods that
+  // do not divide into each other so it never loops, advanced on real time so
+  // the trees keep moving while the game is paused and keep moving when the
+  // sound is off. The ambience reads this rather than keeping its own, which
+  // is why the gust you hear is the gust you can see.
+  windT+=dt*0.06;
+  WIND=Math.min(1, (0.5+0.5*Math.sin(windT*1.7))*0.65 + (0.5+0.5*Math.sin(windT*0.61+1.3))*0.55);
   if(running&&!paused&&!ended){
     const sdt=dt*speed;
     gameTime+=sdt;
@@ -5431,19 +5461,19 @@ const yearNo=()=>1+Math.floor(gameTime/YEAR);
 // conifers to rust.
 const SEASON=[
   {name:'Spring', short:'Spr',
-   grass:['#587617','#6B8520','#7D8D2B','#91954C','#8A7622'],
+   grass:['#3F601C','#557619','#6E8626','#7F8C3C','#9A9354'],
    dark:['#40682C','#4C7434','#436A28','#59853A'],
    lit:['#6E9C48','#7CAB52','#739F42','#8CBA58'],
    detail:['rgba(120,152,70,.55)','rgba(180,192,116,.50)','rgba(96,126,60,.45)','rgba(202,194,136,.42)'],
    weather:'blossom', chill:0},
   {name:'Summer', short:'Sum',
-   grass:['#566E18','#637A1F','#758229','#8A8C45','#87721E'],
+   grass:['#3A5819','#4F6C18','#6C7E26','#7E8735','#98914E'],
    dark:['#3A5E28','#456B2F','#3E6224','#527C36'],
    lit:['#5E8C3C','#6C9B46','#639338','#7CAA4C'],
    detail:['rgba(108,138,64,.55)','rgba(168,180,108,.50)','rgba(88,116,56,.45)','rgba(196,186,128,.42)'],
    weather:null, chill:0},
   {name:'Autumn', short:'Aut',
-   grass:['#616A13','#767616','#887D18','#97892D','#87721E'],
+   grass:['#455417','#697015','#8A7C18','#9A8A2C','#AC9748'],
    dark:['#6E4A22','#7E5A26','#653F1E','#8A6A2E'],
    lit:['#B0802E','#BE913A','#A2702A','#C89E46'],
    detail:['rgba(150,132,62,.55)','rgba(190,168,96,.50)','rgba(122,98,50,.45)','rgba(202,178,116,.42)'],
@@ -5453,7 +5483,7 @@ const SEASON=[
    conifLit:['#4E7638','#5A8241','#537C36','#688F48'],
    weather:'leaves', chill:0.25},
   {name:'Winter', short:'Win',
-   grass:['#8D9A8C','#9FAA9B','#B2BAAF','#C6CAC0','#A99A8C'],
+   grass:['#7B8981','#93A196','#AEB6AC','#BDC3B8','#B4A895'],
    dark:['#3C4A34','#44503A','#3A4632','#4A5640'],
    lit:['#5E6E54','#67775E','#5A6B52','#707F64'],
    detail:['rgba(196,204,196,.50)','rgba(216,220,214,.45)','rgba(140,152,140,.40)','rgba(208,206,196,.42)'],
@@ -5663,6 +5693,10 @@ function overhangAO(g,x,y,w,depth,strength){
   g.fillRect(x, y, w, depth);
 }
 
+// How hard it is blowing, 0 to 1. Written by the ambience when there is sound
+// and left at a steady breeze when there is not, so a muted game still has a
+// valley that moves.
+let WIND=0.45, windT=0;
 const GRAIN_DARK=[28,38,54], GRAIN_LIGHT=[255,246,212];
 
 // ---- baked ground ----------------------------------------------------------
@@ -5737,7 +5771,7 @@ function terrAt(tx,ty){
 // bitmap the ground is drawn from.
 const FLOWER=[['#E8E2D0','#D8CFA8'],['#E6C860','#C9A63C'],['#C9A8D8','#A886C0'],
               ['#E09A8E','#C57468'],['#F0EDE4','#CFC9B4']];
-function decorTile(g,sx,sy,t,h,shore){
+function decorTile(g,sx,sy,t,h,shore,tx,ty){
   const pick=h%97;
   const jx=sx+5+((h>>5)&15), jy=sy+6+((h>>9)&13);
   if(shore&&pick<34){                                   // reeds, only at the water
@@ -5774,7 +5808,12 @@ function decorTile(g,sx,sy,t,h,shore){
     }
     return;
   }
-  if(pick<24&&t!==4){                                    // flowers
+  // Flowers come in meadows, not in a sprinkle. Where they are is decided by a
+  // broad field and by how damp the ground is, so the valley gets flowery
+  // hollows and bare rises instead of the same even scatter from edge to edge.
+  const lush = t<=1 ? 1 : t===2 ? 0.55 : 0.18;
+  const meadow = swardNoise(tx*0.045+91, ty*0.045-63);
+  if(pick < Math.round(31*meadow*lush + 3*lush) && t!==4){   // flowers
     const F=FLOWER[(h>>>13)%5], n=3+((h>>4)&2);
     g.strokeStyle='rgba(96,122,58,.75)'; g.lineWidth=1;
     for(let i=0;i<n;i++){
@@ -5907,6 +5946,56 @@ function swardNoise(x,y){
   const a=at(xi,yi), b=at(xi+1,yi), c=at(xi,yi+1), d=at(xi+1,yi+1);
   return (a+(b-a)*sx) + ((c+(d-c)*sx)-(a+(b-a)*sx))*sy;
 }
+/* ---- what a wood does to the ground under it ------------------------------
+   A tree standing on the same green as the open meadow is a tree pasted onto
+   a lawn. Under a wood the light does not reach: the ground is darker, cooler
+   and duller, and where the trees stand close the shade of one runs into the
+   shade of the next - which is what makes a wood read as a wood rather than
+   as a number of trees.
+
+   The shade is a field, one byte a tile, written into a small bitmap and
+   scaled up with smoothing exactly the way the terrain colour is. Neighbouring
+   trees merge into one mass for free, and the whole thing costs one extra
+   image per chunk at bake time and nothing at all per frame.               */
+let canopy=null, canopyDirty=true;
+function markCanopy(){ canopyDirty=true; }
+function buildCanopy(){
+  canopyDirty=false;
+  const n=MAP_W*MAP_H;
+  if(!canopy||canopy.length!==n) canopy=new Uint8Array(n); else canopy.fill(0);
+  for(const e of ents){
+    if(e.dead||e.kind!=='res'||e.type!=='tree') continue;
+    const tx=(e.x/TILE)|0, ty=(e.y/TILE)|0;
+    for(let dy=-1;dy<=1;dy++){
+      const y=ty+dy; if(y<0||y>=MAP_H) continue;
+      for(let dx=-1;dx<=1;dx++){
+        const x=tx+dx; if(x<0||x>=MAP_W) continue;
+        const w=(dx||dy)?((dx&&dy)?12:22):40;
+        const i=y*MAP_W+x;
+        canopy[i]=Math.min(255, canopy[i]+w);
+      }
+    }
+  }
+}
+function canopyAt(tx,ty){
+  if(canopyDirty) buildCanopy();
+  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 0;
+  return canopy[ty*MAP_W+tx];
+}
+// A felled tree lets the light back in, so the ground it shaded has to be
+// baked again - its own chunk and the neighbours its shade reached into.
+function clearCanopyAt(x,y){
+  markCanopy();
+  // Only the chunks the tree's shade actually fell in. Its kernel is one tile
+  // wide, so that is its own chunk and at most the neighbours it touched -
+  // evicting a blanket three by three is eight needless bakes every time a
+  // woodcutter finishes a trunk.
+  const tx=(x/TILE)|0, ty=(y/TILE)|0;
+  const c0=Math.floor((tx-1)/CH_T), c1=Math.floor((tx+1)/CH_T);
+  const r0=Math.floor((ty-1)/CH_T), r1=Math.floor((ty+1)/CH_T);
+  for(let j=r0;j<=r1;j++) for(let i=c0;i<=c1;i++) chunkCache.delete(i*8192+j);
+}
+
 function groundChunk(cx,cy){
   const key=cx*8192+cy;
   const hit=chunkCache.get(key);
@@ -6075,7 +6164,7 @@ function groundChunk(cx,cy){
     const t=terrain[ty*MAP_W+tx];
     if(t===WATER) continue;
     const h=((tx*2246822519)^(ty*3266489917)^0x9E3779B9)>>>0;
-    decorTile(g, i*TILE, j*TILE, t, h, sandAt(tx,ty)>0);
+    decorTile(g, i*TILE, j*TILE, t, h, sandAt(tx,ty)>0, tx, ty);
   }
   const gp=grainPat(g,'turf',64,9,GRAIN_DARK,GRAIN_LIGHT,0.20);
   if(gp){
@@ -6083,6 +6172,30 @@ function groundChunk(cx,cy){
     g.translate(-((cx*CH_T*TILE)%64), -((cy*CH_T*TILE)%64));
     g.fillStyle=gp; g.fillRect(0,0,CH_T*TILE+64,CH_T*TILE+64);
     g.restore();
+  }
+  // The floor of the wood, over everything else the chunk has drawn. One pixel
+  // a tile, upscaled with smoothing, so a stand of trees casts one soft mass
+  // instead of a ring of discs.
+  {
+    if(canopyDirty) buildCanopy();
+    const P=CH_T+2;
+    let any=false;
+    const co=document.createElement('canvas'); co.width=P; co.height=P;
+    const cg=co.getContext('2d'), ci=cg.createImageData(P,P);
+    for(let j=0;j<P;j++) for(let i=0;i<P;i++){
+      const wx=cx*CH_T+i-1, wy=cy*CH_T+j-1;
+      let a=0;
+      if(wx>=0&&wy>=0&&wx<MAP_W&&wy<MAP_H && terrain[wy*MAP_W+wx]!==WATER)
+        a=Math.min(136, canopy[wy*MAP_W+wx]*0.70);
+      if(a>2) any=true;
+      const o=(j*P+i)*4;
+      ci.data[o]=24; ci.data[o+1]=36; ci.data[o+2]=28; ci.data[o+3]=a;
+    }
+    if(any){
+      cg.putImageData(ci,0,0);
+      g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+      g.drawImage(co, -TILE, -TILE, P*TILE, P*TILE);
+    }
   }
   chunkCache.set(key,{c,use:++chunkTick});
   const cap=chunkCap();
@@ -6377,6 +6490,17 @@ function draw(){
 
   // dust kicked up underfoot
   for(const q of puffs){
+    if(q.rise){
+      // Woodsmoke. It goes up, it thins as it goes, and it leans with the same
+      // wind the trees are leaning in.
+      const age=1-q.t/1.5;
+      ctx.fillStyle='rgba(206,200,186,'+(q.t*0.34).toFixed(2)+')';
+      ctx.beginPath();
+      ctx.arc(q.x-cam.x+age*age*26*(0.35+WIND), q.y-cam.y-age*34,
+              q.r*(1+age*2.4), 0, 6.283);
+      ctx.fill();
+      continue;
+    }
     ctx.fillStyle = q.dust
       ? 'rgba(214,203,176,'+(q.t*0.55).toFixed(2)+')'
       : 'rgba(196,186,150,'+(q.t*0.5).toFixed(2)+')';
@@ -6581,6 +6705,25 @@ function drawOverlay(W,H){
 
 // Resources are baked once per variant. Trees carry a size and tint drawn from
 // their id, so a forest reads as many trees rather than one stamped over and over.
+/* ---- how a wood moves ------------------------------------------------------
+   Two ways to do this were built and measured before settling on the third.
+
+   Shearing each tree from its foot at draw time is the correct one - trunk and
+   shadow planted, crown going over - and it costs a quarter of the frame rate
+   in a wood, because a sheared blit is resampled every frame where a plain one
+   is a copy: 35 frames a second against 48, with 320 trees on screen.
+
+   Baking the lean into the sprite instead puts drawing back on the fast path
+   and costs memory instead: seven leans took the tree cache from 128 sprites
+   and 1.3MB to 781 and 10.1MB, and that is at one bitmap pixel per CSS pixel.
+   On a Retina display it is four times that, and on Sharp nine.
+
+   So: the whole sprite is offset by a couple of pixels instead, on a slow
+   wander driven by the same wind the ambience is playing. The trunk slides
+   with the crown, which is wrong, but at two pixels on a sixty-pixel tree
+   nobody can see that it did, and it costs nothing at all in either frame time
+   or memory. The correct version is worth revisiting only if trees ever get
+   split into a planted part and a moving one.                             */
 function treeSprite(v){
   const sc=0.84+((v&7)/7)*0.44, tint=(v>>3)&3, kind=(v>>5)&3;
   const w=Math.ceil(34*sc)+10, h=Math.ceil(40*sc)+12;
@@ -6795,7 +6938,11 @@ function drawRes(e){
   if(e.type==='tree'){
     const v=(e.id*2654435761)>>>0;
     const sp=treeSprite(v);
-    const sway=SINT[((e.id*5)+((gameTime*7)|0))&63]*1.1;
+    // Two periods that do not divide into each other, offset per tree, so a
+    // wood never breathes in unison, and an amplitude that rises and falls with
+    // the wind rather than a fixed wobble on a quantised clock.
+    const ph=gameTime*0.85+e.id*0.87;
+    const sway=(Math.sin(ph)*0.62+Math.sin(ph*0.37+1.9)*0.38)*(1.1+WIND*2.1);
     blit(sp, x-sp.w/2+sway, y+6-sp.h);
   } else if(e.type==='berry'){
     const v=(e.id*2654435761)>>>0;
@@ -8567,6 +8714,20 @@ function drawBld(b){
 
   if(tier>=2 && b.type!=='plot' && ((b.id+((gameTime*3)|0))&7)===0 && puffs.length<240)   // it is smoking
     puffs.push({x:b.x+(rnd()-0.5)*w*0.5, y:b.y-h*0.2, t:0.9, r:3+rnd()*5});
+  // A hearth that is lit. A settlement where nothing comes out of any chimney
+  // is a model of a settlement; one thin trail off each roof is the difference,
+  // and it comes off the chimney the building actually has rather than out of
+  // the middle of the roof. Rarely, and never on a building that is already
+  // burning - that smoke is a different thing and it is saying something else.
+  if(!tier && !b.building && !ghost && CHIMNEY[b.type] && puffs.length<210 &&
+     ((b.id*7+((gameTime*1.6)|0))%23)===0){
+    const v=(b.id>>1)&1;
+    const cx2=px+w*(v?1-CHIMNEY[b.type]:CHIMNEY[b.type]);
+    const ap2=bldApex(b.type,py,w);
+    const roofY=py+13+(ap2-(py+13))*(1-Math.abs(cx2-(px+w/2))/(w/2+3));
+    puffs.push({x:cx2+cam.x+(rnd()-0.5)*3, y:roofY+cam.y-15,
+                t:1.5, r:2+rnd()*2.2, rise:1});
+  }
   if(tier>=3 && b.type!=='plot' && !ghost){                            // and burning
     for(let i=0;i<3;i++){
       const ph=SINT[((gameTime*9)+i*21+b.id)&63];
