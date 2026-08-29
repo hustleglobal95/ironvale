@@ -33,6 +33,13 @@ window.__IV={
   startAge:(o)=>startAge(o),
   usprite:(t,o,p,d)=>unitSprite(t,o,p,d), ugeom:(t)=>unitGeom(t),
   bsprite:(t,o,tr,v)=>bldSprite(t,o,tr,v), bpad:(t)=>bldPad(t),
+  sig:(o)=>sigOf(o), roofCol:(t,o)=>roofOf(BLD[t].roof,o), season:()=>seasonNow,
+  // Pixels out of a baked sprite, so a suite can ask what a roof is actually
+  // painted and whether two figures have the same outline.
+  px:(sp)=>{ const c=document.createElement('canvas');
+    c.width=sp.c.width; c.height=sp.c.height;
+    const g2=c.getContext('2d'); g2.drawImage(sp.c,0,0);
+    return Array.from(g2.getImageData(0,0,c.width,c.height).data); },
   slot:(o,x,y)=>fieldSlot(o,x,y), touch:()=>{ touchLists(); rebuildOcc(); }, variant:(b)=>farmVariant(b), lay:(f)=>layBlock(f), slots:(f)=>fieldSlots(f),
   noteKill:noteKill, offer:(o,k)=>{ envoy=null; offerPlayer(o,k); },
   send:(o,k)=>playerSend(o,k), canSend:(o,k)=>playerCanSend(o,k),
@@ -67,6 +74,8 @@ window.__IV={
   spriteCount:()=>Object.keys(SPRITE).length,
   chunks:()=>chunkCache.size,
   fallen:()=>fallen, spent:()=>spent,
+  sparks:()=>sparks, puffs:()=>puffs, wrecks:()=>wrecks,
+  hitFx:(a,b)=>hitDebris(a,b), rubble:(t)=>rubbleSprite(t),
   // the three-dimensional view
   v3:()=>V3, v3on:v3Toggle, orbit:v3Orbit, hAt:heightAt, tw:toWorld,
   // Where a world point lands on screen, by the same matrix the renderer uses.

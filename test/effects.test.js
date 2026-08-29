@@ -151,6 +151,67 @@ const { chromium, wrap, boot } = require('./harness');
   const c = await page.evaluate(() => ({ x: window.__IV.cam().x, y: window.__IV.cam().y }));
   ok('the shake is a view effect, not a camera move', Math.abs(a.x - c.x) < 1 && Math.abs(a.y - c.y) < 1);
 
+  // ---- what a blow throws depends on what it lands on ---------------------
+  // Mail throws sparks and nothing else; a padded jack throws its own cloth; a
+  // ram throws timber. Same call, four readings, and it is the fastest way to
+  // tell an armoured man from an unarmoured one in a crowd.
+  const deb = await page.evaluate(() => {
+    const g = window.__IV, out = {};
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    for (const t of ['militia', 'archer', 'knight', 'ram', 'vil']) {
+      while (g.sparks().length) g.sparks().pop();
+      const a = g.spawn(0, 'militia', tc.x + 220, tc.y + 220);
+      const v = g.spawn(1, t, tc.x + 244, tc.y + 220);
+      g.hitFx(a, v);
+      out[t] = g.sparks().map(x => x.c ? x.c.join(',') : 'hot');
+      a.dead = true; v.dead = true;
+    }
+    return out;
+  });
+  const hotN = k => deb[k].filter(x => x === 'hot').length;
+  ok('mail throws sparks (' + hotN('militia') + ' of ' + deb.militia.length + ')', hotN('militia') >= 3);
+  ok('cloth throws cloth (' + hotN('archer') + ' hot on an archer)',
+     hotN('archer') === 0 && deb.archer.length >= 4);
+  ok('a ram throws timber (' + deb.ram.length + ' pieces, ' + hotN('ram') + ' hot)',
+     deb.ram.length >= 5 && hotN('ram') === 0);
+  ok('and an archer and a villager do not shed the same colour',
+     JSON.stringify(deb.archer) !== JSON.stringify(deb.vil));
+  ok('a horse kicks dust off the ground it is standing on', await page.evaluate(() => {
+    const g = window.__IV, tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    while (g.puffs().length) g.puffs().pop();
+    const a = g.spawn(0, 'militia', tc.x + 220, tc.y + 280);
+    const v = g.spawn(1, 'knight', tc.x + 244, tc.y + 280);
+    g.hitFx(a, v); const n = g.puffs().length;
+    a.dead = true; v.dead = true; return n > 0;
+  }));
+
+  // ---- a building that is razed comes down ---------------------------------
+  const fall = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e4;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const h = g.mk(0, 'house', tc.tx + 7, tc.ty + 5, true);
+    g.cam().x = h.x - 400; g.cam().y = h.y - 300;
+    while (g.wrecks().length) g.wrecks().pop();
+    const foe = g.spawn(1, 'ram', h.x + 26, h.y);
+    h.hp = 6; foe.target = h; foe.task = 'attack';
+    await new Promise(r => setTimeout(r, 2600));
+    const w = g.wrecks()[0];
+    const first = w ? w.t : 0;
+    await new Promise(r => setTimeout(r, 1100));
+    return { n: g.wrecks().length, gone: h.dead, type: w && w.type,
+             life: w && w.life, first, later: g.wrecks().length ? g.wrecks()[0].t : 0 };
+  });
+  ok('a razed building leaves a wreck rather than blinking out (' + fall.type + ')',
+     fall.gone && fall.n === 1 && fall.type === 'house');
+  ok('the wreck is still there a second later, fading (' +
+     fall.first.toFixed(1) + 's -> ' + fall.later.toFixed(1) + 's of ' + fall.life + ')',
+     fall.later > 0 && fall.later < fall.first);
+  ok('the rubble is baked once per building type, not per wreck', await page.evaluate(() => {
+    const g = window.__IV;
+    return g.rubble('house') === g.rubble('house') && g.rubble('house').w > 0;
+  }));
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
