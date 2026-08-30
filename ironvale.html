@@ -717,6 +717,9 @@
       <label for="detail"><span>Detail</span><i id="detailVal">Balanced</i></label>
       <input type="range" id="detail" min="1" max="3" step="1" value="2">
       <div class="hint" id="detailHint">How many real pixels everything is drawn into. Sharp is three times the resolution and three times the memory for the ground.</div>
+      <label for="isoBtn"><span>Renderer</span><i id="isoVal">Classic</i></label>
+      <button class="ghost" id="isoBtn">Classic view, or the isometric port in progress</button>
+      <div class="hint">The isometric view projects the same game onto the classic 2:1 diamond. It is a port in progress: the ground, fog, paths and picking are native; buildings and units convert one type at a time and stand as flat markers until they do.</div>
       <label for="gradeBtn"><span>Colour grade</span><i id="gradeVal">On</i></label>
       <button class="ghost" id="gradeBtn">Warm light, cool shade, and a frame that tightens in battle</button>
       <div class="hint">Split-tones the picture and follows the seasons. Turn it off for a flatter, brighter image.</div>
@@ -1331,6 +1334,10 @@ let scarred=[];        // only the buildings currently carrying marks
 let wrecks=[];         // buildings that have come down, still coming down
 function onScreen(x,y,pad){
   pad=pad||0;
+  if(typeof ISO!=='undefined'&&ISO.on){
+    const px=(x-y)-cam.x, py=(x+y)/2-cam.y;
+    return px>-pad && py>-pad && px<innerWidth+pad && py<innerHeight+pad;
+  }
   return x>cam.x-pad && y>cam.y-pad && x<cam.x+innerWidth+pad && y<cam.y+innerHeight+pad;
 }
 
@@ -2159,15 +2166,63 @@ function newGame(diff){
   // Which view you were last in is a preference, not part of the save: the
   // height field is generated from the map seed, so it comes back the same.
   try{ if(localStorage.getItem(STORE+'v3')==='1'&&!V3.on) v3Toggle(); }catch(e){}
+  try{ if(localStorage.getItem(STORE+'iso')==='1'&&!ISO.on&&!V3.on) isoToggle(true); }catch(e){}
 }
 
 /* --------------------------- camera --------------------------- */
+/* ---- the isometric renderer -------------------------------------------------
+   A third way of looking at the same game, beside the classic view and the
+   WebGL one. The projection is the classic 2:1 diamond:
+
+       x' = x - y          y' = (x + y) / 2
+
+   and its inverse  x = y' + x'/2,  y = y' - x'/2  - exact, no trigonometry.
+   The load-bearing observation is that this is an AFFINE map of the ground
+   plane, which canvas applies natively: one setTransform and every existing
+   ground bake - terrain chunks, worn sites, farm aprons, paths, canopy shade -
+   projects pixel-correct with no re-authoring. Only things with HEIGHT need
+   new art, and those migrate one type at a time: anything not yet converted
+   is drawn as its classic sprite stood upright on the projected ground, which
+   is the clearly-marked temporary fallback the port calls for.
+
+   While ISO is on, `cam` holds the camera in ISO SCREEN space, and toWorld /
+   scr / onScreen / clampCam / centerOn all speak the projection. Simulation,
+   pathfinding, placement and collision never see any of this: they live in
+   world coordinates and always will. */
+const ISO={on:false};
+// The debug overlay the port directive asks for: fps, what was drawn, what was
+// culled, what the caches hold. F3. Works in both renderers.
+const DBG={on:false, fps:0, frames:0, at:0, drawn:0, culled:0, byKind:{}};
+function isoP(wx,wy){ return {x:wx-wy, y:(wx+wy)/2}; }
+function isoInv(px,py){ return {x:py+px/2, y:py-px/2}; }
+// World point -> screen, whichever 2D renderer is active. Every entity draw
+// call goes through this, which is what makes the fallback billboards land on
+// the projected ground for free.
+function scr(wx,wy){
+  return ISO.on ? {x:(wx-wy)-cam.x, y:(wx+wy)/2-cam.y}
+                : {x:wx-cam.x, y:wy-cam.y};
+}
+function isoToggle(on){
+  const c=toWorld(innerWidth/2, innerHeight/2);   // hold the view's centre
+  ISO.on = on===undefined ? !ISO.on : !!on;
+  try{ localStorage.setItem(STORE+'iso', ISO.on?'1':'0'); }catch(e){}
+  centerOn(c.x, c.y);
+}
 function clampCam(){
+  if(ISO.on){
+    // the projected extent of the map: x' in [-H, W], y' in [0, (W+H)/2]
+    cam.x=Math.max(-WORLD_H-40, Math.min(WORLD_W-innerWidth+40, cam.x));
+    cam.y=Math.max(-40-HUD_TOP, Math.min((WORLD_W+WORLD_H)/2-innerHeight+HUD_BOT+40, cam.y));
+    return;
+  }
   cam.x=Math.max(-40, Math.min(WORLD_W-innerWidth+40, cam.x));
   cam.y=Math.max(-40-HUD_TOP, Math.min(WORLD_H-innerHeight+HUD_BOT+40, cam.y));
   if(WORLD_W<innerWidth) cam.x=(WORLD_W-innerWidth)/2;
 }
-function centerOn(x,y){ cam={x:x-innerWidth/2, y:y-innerHeight/2}; clampCam(); }
+function centerOn(x,y){
+  if(ISO.on){ const p=isoP(x,y); cam={x:p.x-innerWidth/2, y:p.y-innerHeight/2}; clampCam(); return; }
+  cam={x:x-innerWidth/2, y:y-innerHeight/2}; clampCam();
+}
 
 /* --------------------------- targeting --------------------------- */
 function nearestDrop(u,key){
@@ -6664,7 +6719,8 @@ function drawFlocks(){
     const ca=Math.cos(ang), sa=Math.sin(ang);
     for(const b of f.bird){
       const bx=f.x+ca*b.p-sa*b.o, by=f.y+sa*b.p+ca*b.o;
-      const sx=bx-cam.x, sy=by-cam.y-f.alt-b.h;
+      const BS=scr(bx,by);
+      const sx=BS.x, sy=BS.y-f.alt-b.h;
       if(sx<-40||sx>innerWidth+40||sy<HUD_TOP-40||sy>innerHeight-HUD_BOT+40) continue;
       // Birds are drawn over the fog, so they have to respect it themselves:
       // nothing flies over ground you have never seen, and what crosses
@@ -6882,7 +6938,7 @@ function dogSprite(breed,pose,dir){
   });
 }
 function drawDog(d){
-  const x=d.x-cam.x, y=d.y-cam.y;
+  const {x,y}=scr(d.x,d.y);
   const pose = d.state==='sit' ? 3 : d.state==='go' ? 1+(((d.phase|0)%2+2)%2) : 0;
   const sp=dogSprite(d.breed,pose,d.dir);
   contactShadow(ctx, x, y+1, 5.5, 2.1, 0.22);
@@ -6899,7 +6955,7 @@ function dogsVisible(){
 
 function flocksVisible(){
   for(const f of flocks){
-    const sx=f.x-cam.x, sy=f.y-cam.y;
+    const {x:sx,y:sy}=scr(f.x,f.y);
     if(sx>-80&&sx<innerWidth+80&&sy>HUD_TOP-80&&sy<innerHeight-HUD_BOT+80) return true;
   }
   return false;
@@ -6922,23 +6978,58 @@ function draw(){
     cam.x+=(Math.random()-0.5)*shake;
     cam.y+=(Math.random()-0.5)*shake;
   }
-  const x0=Math.max(0,(cam.x/TILE)|0), y0=Math.max(0,(cam.y/TILE)|0);
-  const x1=Math.min(MAP_W-1,((cam.x+W)/TILE|0)+1), y1=Math.min(MAP_H-1,((cam.y+H)/TILE|0)+1);
+  // The visible tile range. In the isometric view the screen is a diamond in
+  // world space; the world-space bounding box of the four screen corners is
+  // the smallest axis-aligned range that covers it.
+  let x0,y0,x1,y1;
+  if(ISO.on){
+    const A=isoInv(cam.x,cam.y), B=isoInv(cam.x+W,cam.y),
+          C=isoInv(cam.x,cam.y+H), D=isoInv(cam.x+W,cam.y+H);
+    x0=Math.max(0,(Math.min(A.x,B.x,C.x,D.x)/TILE|0)-1);
+    y0=Math.max(0,(Math.min(A.y,B.y,C.y,D.y)/TILE|0)-1);
+    x1=Math.min(MAP_W-1,(Math.max(A.x,B.x,C.x,D.x)/TILE|0)+1);
+    y1=Math.min(MAP_H-1,(Math.max(A.y,B.y,C.y,D.y)/TILE|0)+1);
+  } else {
+    x0=Math.max(0,(cam.x/TILE)|0); y0=Math.max(0,(cam.y/TILE)|0);
+    x1=Math.min(MAP_W-1,((cam.x+W)/TILE|0)+1); y1=Math.min(MAP_H-1,((cam.y+H)/TILE|0)+1);
+  }
 
   const wave=gameTime*0.9;
   const wA=Math.sin(wave), wB=Math.cos(wave*0.8);
 
   const c0=(x0/CH_T)|0, c1=(x1/CH_T)|0, r0=(y0/CH_T)|0, r1=(y1/CH_T)|0;
-  for(let cy=r0;cy<=r1;cy++) for(let cx=c0;cx<=c1;cx++)
-    ctx.drawImage(groundChunk(cx,cy),
-      Math.round(cx*CH_T*TILE-cam.x), Math.round(cy*CH_T*TILE-cam.y),
-      CH_T*TILE, CH_T*TILE);
+  if(ISO.on){
+    // The whole ground plane through one affine transform: the existing chunk
+    // bakes - blending, mottle, decoration, water depth, canopy shade, worn
+    // sites - land as a pixel-correct diamond with no re-authoring at all.
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
+    ctx.transform(1,0.5,-1,0.5,0,0);
+    ctx.imageSmoothingEnabled=true;
+    for(let cy=r0;cy<=r1;cy++) for(let cx=c0;cx<=c1;cx++)
+      ctx.drawImage(groundChunk(cx,cy), cx*CH_T*TILE, cy*CH_T*TILE, CH_T*TILE, CH_T*TILE);
+    ctx.restore();
+  } else {
+    for(let cy=r0;cy<=r1;cy++) for(let cx=c0;cx<=c1;cx++)
+      ctx.drawImage(groundChunk(cx,cy),
+        Math.round(cx*CH_T*TILE-cam.x), Math.round(cy*CH_T*TILE-cam.y),
+        CH_T*TILE, CH_T*TILE);
+  }
 
   // The depth ramp is baked into the ground, so the live pass only has to move
   // light across it. The swell is written one pixel per tile into a small
   // buffer and scaled up with smoothing - drawn as tile rectangles it reads as
   // stripes, which is exactly the grid the baked depth just got rid of.
-  {
+  if(ISO.on){
+    // The swell overlay stays classic-only for now, but the ear must still
+    // know how much water is in front of the player: the ambience follows it.
+    let wet=0, seen=0;
+    for(let y=y0;y<=y1;y+=2) for(let x=x0;x<=x1;x+=2){
+      seen++; if(terrain[y*MAP_W+x]===WATER) wet++;
+    }
+    visWater = seen ? wet/seen : 0;
+  }
+  if(!ISO.on){
     const tw=x1-x0+3, th=y1-y0+3;
     let wet=0, seen=0;
     if(!swell||swell.c.width<tw||swell.c.height<th){
@@ -6990,11 +7081,13 @@ function draw(){
       }
     }
   }
-  ctx.fillStyle='#5D6242';
-  if(cam.x<0) ctx.fillRect(0,0,-cam.x,H);
-  if(cam.y<0) ctx.fillRect(0,0,W,-cam.y);
-  if(cam.x+W>WORLD_W) ctx.fillRect(WORLD_W-cam.x,0,W,H);
-  if(cam.y+H>WORLD_H) ctx.fillRect(0,WORLD_H-cam.y,W,H);
+  if(!ISO.on){
+    ctx.fillStyle='#5D6242';
+    if(cam.x<0) ctx.fillRect(0,0,-cam.x,H);
+    if(cam.y<0) ctx.fillRect(0,0,W,-cam.y);
+    if(cam.x+W>WORLD_W) ctx.fillRect(WORLD_W-cam.x,0,W,H);
+    if(cam.y+H>WORLD_H) ctx.fillRect(0,WORLD_H-cam.y,W,H);
+  }
 
   // ---- the steading's apron -------------------------------------------------
   // A steading does not stand in grass. It comes with its ground already broken
@@ -7006,6 +7099,64 @@ function draw(){
   // Worn ground first, then the tracks over it, then the shadows the buildings
   // throw onto both. All three are terrain: they go under every entity, and a
   // field or a unit laid on top simply covers them.
+  if(ISO.on){
+    // Everything painted flat on the ground goes through the same transform
+    // the terrain went through, in world coordinates, and lands projected.
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
+    ctx.transform(1,0.5,-1,0.5,0,0);
+    ctx.imageSmoothingEnabled=true;
+    for(const b of bldCache){
+      if(b.dead||b.type==='plot') continue;
+      if(b.owner!==PLAYER && !knows(b)) continue;
+      if(!onScreen(b.x,b.y,340)) continue;
+      const bw=b.w*TILE, bh=b.h*TILE;
+      const sp=siteSprite(b.type,bw,bh,(b.id>>1)&1,seasonNow);
+      if(!sp) continue;
+      ctx.globalAlpha=b.building?0.45:1;
+      ctx.drawImage(sp.c, b.tx*TILE-sp.ox, b.ty*TILE-sp.oy, sp.w, sp.h);
+      ctx.globalAlpha=1;
+    }
+    for(const f of bldCache){
+      if(f.type!=='farm'||f.dead) continue;
+      if(f.owner!==PLAYER && !knows(f)) continue;
+      if(!onScreen(f.x,f.y,380)) continue;
+      const ap=apronSprite();
+      ctx.globalAlpha=f.building?0.35*(1-(f.build||0)/Math.max(1,BLD.farm.build)):1;
+      ctx.drawImage(ap.c, (f.tx+1)*TILE-ap.w/2, (f.ty+1)*TILE-ap.h/2, ap.w, ap.h);
+      ctx.globalAlpha=1;
+    }
+    // paths: the same baked band sprites, laid along their world line - the
+    // transform turns the rotation into the projected rotation for free
+    if(pathsDirty){ buildPaths(); pathsDirty=false; }
+    for(const pth of PATHS){
+      if(!onScreen((pth.ax+pth.bx)/2,(pth.ay+pth.by)/2,320)) continue;
+      const len=Math.hypot(pth.bx-pth.ax, pth.by-pth.ay);
+      if(len<24) continue;
+      const sp=pathSprite(len, pth.w, pth.bow);
+      ctx.save();
+      ctx.translate(pth.ax, pth.ay);
+      ctx.rotate(Math.atan2(pth.by-pth.ay, pth.bx-pth.ax));
+      ctx.drawImage(sp.c, 0, -sp.oy, len, sp.h);
+      ctx.restore();
+    }
+    // building shadows: a soft pool thrown along +x in world space, which is
+    // exactly screen lower-right once projected
+    for(const b of bldCache){
+      if(b.dead||b.type==='plot'||b.building) continue;
+      if(b.owner!==PLAYER && !knows(b)) continue;
+      if(!onScreen(b.x,b.y,300)) continue;
+      const bw=b.w*TILE, bh=b.h*TILE;
+      const rise=bh + bw*formOf(b.type).pitch;
+      ctx.fillStyle='rgba('+LIGHT.deep+',.10)';
+      ctx.beginPath();
+      ctx.ellipse(b.x+rise*0.34, b.y+rise*0.10, bw*0.66, bh*0.56, 0, 0, 6.283); ctx.fill();
+      ctx.fillStyle='rgba('+LIGHT.deep+',.12)';
+      ctx.beginPath();
+      ctx.ellipse(b.x+rise*0.18, b.y+rise*0.05, bw*0.56, bh*0.48, 0, 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  } else {
   for(const b of bldCache){
     if(b.dead||b.type==='plot') continue;
     if(b.owner!==PLAYER && !knows(b)) continue;
@@ -7034,7 +7185,8 @@ function draw(){
   }
 
   drawPaths(W,H);
-  for(const b of bldCache){
+  }
+  if(!ISO.on) for(const b of bldCache){
     if(b.dead||b.type==='plot'||b.building) continue;
     if(b.owner!==PLAYER && !knows(b)) continue;
     const bw=b.w*TILE, bh=b.h*TILE;
@@ -7045,23 +7197,24 @@ function draw(){
     blit(sh, sx-sh.ox, sy-sh.oy);
   }
   const vsb=[];
+  DBG.culled=0; DBG.byKind={bld:0,unit:0,res:0,dog:0};
   for(const e of ents){
-    const sx=e.x-cam.x, sy=e.y-cam.y;
-    if(sx<-110||sy<-130||sx>W+110||sy>H+110) continue;
-    if(e.owner<0){ if(visAt(e.x,e.y)===0) continue; }
-    else if(!knows(e)) continue;
+    const S=scr(e.x,e.y);
+    if(S.x<-150||S.y<-170||S.x>W+150||S.y>H+150){ DBG.culled++; continue; }
+    if(e.owner<0){ if(visAt(e.x,e.y)===0){ DBG.culled++; continue; } }
+    else if(!knows(e)){ DBG.culled++; continue; }
     vsb.push(e);
   }
   // The dogs sort in with everything else that stands on the ground, so one
   // can trot behind a house and in front of a fence like anything else alive.
   for(const d of dogs){
-    const sx=d.x-cam.x, sy=d.y-cam.y;
-    if(sx<-40||sy<-40||sx>W+40||sy>H+40) continue;
+    const S=scr(d.x,d.y);
+    if(S.x<-40||S.y<-40||S.x>W+40||S.y>H+40) continue;
     if(visAt(d.x,d.y)!==2) continue;
     d.kind='dog'; vsb.push(d);
   }
   for(const q of spent){                     // arrows that missed
-    const x=q.x-cam.x, y=q.y-cam.y;
+    const {x,y}=scr(q.x,q.y);
     if(x<-20||y<-20||x>W+20||y>H+20) continue;
     ctx.save();
     ctx.globalAlpha=Math.min(0.55, q.t/q.life*0.9);
@@ -7073,8 +7226,17 @@ function draw(){
     ctx.restore();
   }
   drawFallen();
-  vsb.sort((a,b)=>(a.y+(a.kind==='bld'?a.h*TILE/2:0))-(b.y+(b.kind==='bld'?b.h*TILE/2:0)));
+  if(ISO.on){
+    // A hair off the building's key, so a figure standing exactly on its
+    // front edge draws in front of it rather than tying - the classic
+    // multi-tile isometric edge case, decided the way the eye expects.
+    const dk=e=>e.kind==='bld' ? ((e.tx+e.w)+(e.ty+e.h))*TILE-0.01 : e.x+e.y;
+    vsb.sort((a,b)=>dk(a)-dk(b));
+  } else {
+    vsb.sort((a,b)=>(a.y+(a.kind==='bld'?a.h*TILE/2:0))-(b.y+(b.kind==='bld'?b.h*TILE/2:0)));
+  }
   for(const e of vsb){
+    DBG.byKind[e.kind]=(DBG.byKind[e.kind]||0)+1;
     if(e.kind==='dog'){ drawDog(e); continue; }
     if(e.kind==='res') drawRes(e);
     else if(e.kind==='bld') drawBld(e);
@@ -7090,7 +7252,7 @@ function draw(){
       ctx.fillStyle = q.dark ? 'rgba(74,68,60,'+(q.t*0.30).toFixed(2)+')'
                              : 'rgba(206,200,186,'+(q.t*0.34).toFixed(2)+')';
       ctx.beginPath();
-      ctx.arc(q.x-cam.x+age*age*26*(0.35+WIND), q.y-cam.y-age*34,
+      ctx.arc(scr(q.x,q.y).x+age*age*26*(0.35+WIND), scr(q.x,q.y).y-age*34,
               q.r*(1+age*2.4), 0, 6.283);
       ctx.fill();
       continue;
@@ -7098,24 +7260,29 @@ function draw(){
     ctx.fillStyle = q.dust
       ? 'rgba(214,203,176,'+(q.t*0.55).toFixed(2)+')'
       : 'rgba(196,186,150,'+(q.t*0.5).toFixed(2)+')';
-    ctx.beginPath(); ctx.arc(q.x-cam.x, q.y-cam.y, q.r*(1.6-q.t), 0, 6.283); ctx.fill();
+    { const S=scr(q.x,q.y);
+    ctx.beginPath(); ctx.arc(S.x, S.y, q.r*(1.6-q.t), 0, 6.283); ctx.fill(); }
   }
   // shots arc instead of running dead straight
   for(const s of shots){
     const p=1-Math.max(0,s.t)/0.22;
-    const ax=s.x1+(s.x2-s.x1)*p, ay=s.y1+(s.y2-s.y1)*p - Math.sin(p*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
+    // The ground track is world geometry and projects; the arc's lift is a
+    // screen-space subtraction, because height in a 2D view is screen height
+    // in either projection.
+    const lift=Math.sin(p*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
     const bp=Math.max(0,p-0.22);
-    const bx=s.x1+(s.x2-s.x1)*bp, by=s.y1+(s.y2-s.y1)*bp - Math.sin(bp*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
+    const lift2=Math.sin(bp*Math.PI)*Math.min(38,Math.hypot(s.x2-s.x1,s.y2-s.y1)*0.16);
+    const GA=scr(s.x1+(s.x2-s.x1)*p,  s.y1+(s.y2-s.y1)*p);
+    const GB=scr(s.x1+(s.x2-s.x1)*bp, s.y1+(s.y2-s.y1)*bp);
     // The shadow is the arrow without the arc: it stays on the ground while the
     // shaft climbs away from it, which is what makes the arc read as height
     // rather than as a line drawn slightly wrong.
-    const shy=s.y1+(s.y2-s.y1)*p;
     ctx.fillStyle='rgba(24,20,12,.20)';
     ctx.beginPath();
-    ctx.ellipse(ax-cam.x, shy-cam.y+5, 3.2, 1.3, 0, 0, 6.283); ctx.fill();
+    ctx.ellipse(GA.x, GA.y+5, 3.2, 1.3, 0, 0, 6.283); ctx.fill();
     ctx.strokeStyle=s.own===PLAYER?'rgba(214,232,255,.9)':'rgba(255,206,190,.9)';
     ctx.lineWidth=1.8; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(bx-cam.x,by-cam.y); ctx.lineTo(ax-cam.x,ay-cam.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(GB.x,GB.y-lift2); ctx.lineTo(GA.x,GA.y-lift); ctx.stroke();
     ctx.lineCap='butt';
   }
   // sparks where blows land
@@ -7123,7 +7290,7 @@ function draw(){
     const a=Math.max(0,Math.min(1,q.t*3)).toFixed(2);
     if(q.c) ctx.fillStyle='rgba('+q.c[0]+','+q.c[1]+','+q.c[2]+','+a+')';
     else    ctx.fillStyle='rgba(255,'+(150+((q.h||0)*60|0))+',90,'+a+')';
-    ctx.fillRect(q.x-cam.x-1, q.y-cam.y-1, 2.2, 2.2);
+    { const S=scr(q.x,q.y); ctx.fillRect(S.x-1, S.y-1, 2.2, 2.2); }
   }
 
   // fog: unexplored is solid, explored-but-unseen is dimmed
@@ -7131,6 +7298,42 @@ function draw(){
   // One rectangle per run instead of per tile is the difference between 47 and 60.
   // Rows butt up exactly: an overlapping edge would double the alpha and leave a
   // dark rule across the map every tile.
+  if(ISO.on){
+    // The same run-filling fog, in world coordinates under the transform: a
+    // run of hidden tiles becomes one projected parallelogram, and the row
+    // edges still butt exactly because the transform is affine.
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
+    ctx.transform(1,0.5,-1,0.5,0,0);
+    for(let y=y0;y<=y1;y++){
+      const row=y*MAP_W;
+      let x=x0;
+      while(x<=x1){
+        const v=vis[row+x];
+        if(v===2){ x++; continue; }
+        let e=x;
+        while(e+1<=x1 && vis[row+e+1]===v) e++;
+        ctx.fillStyle = v===0 ? '#191710' : 'rgba(20,26,30,.40)';
+        ctx.fillRect(x*TILE, y*TILE, (e+1-x)*TILE, TILE);
+        x=e+1;
+      }
+    }
+    ctx.fillStyle='rgba(25,23,16,.55)';
+    for(let y=y0;y<=y1;y++){
+      const row=y*MAP_W;
+      for(let x=x0;x<=x1;x++){
+        if(vis[row+x]!==0) continue;
+        const l=x>0&&vis[row+x-1]===2, r2=x<MAP_W-1&&vis[row+x+1]===2;
+        const u2=y>0&&vis[row-MAP_W+x]===2, d2=y<MAP_H-1&&vis[row+MAP_W+x]===2;
+        if(!(l||r2||u2||d2)) continue;
+        if(l) ctx.fillRect(x*TILE,y*TILE,7,TILE+1);
+        if(r2) ctx.fillRect(x*TILE+TILE-6,y*TILE,7,TILE+1);
+        if(u2) ctx.fillRect(x*TILE,y*TILE,TILE+1,7);
+        if(d2) ctx.fillRect(x*TILE,y*TILE+TILE-6,TILE+1,7);
+      }
+    }
+    ctx.restore();
+  } else {
   for(let y=y0;y<=y1;y++){
     const row=y*MAP_W, sy=Math.round(y*TILE-cam.y), sh=Math.round((y+1)*TILE-cam.y)-sy;
     let x=x0;
@@ -7161,6 +7364,7 @@ function draw(){
       if(d2) ctx.fillRect(sx,sy+TILE-6,TILE+1,7);
     }
   }
+  }
 
   if(placing){
     const d=BLD[placing];
@@ -7168,6 +7372,31 @@ function draw(){
     const cells = (d.line&&lineDrag) ? lineTiles(lineDrag,{x:tx,y:ty}) : [{x:tx,y:ty}];
     let purse=sides[PLAYER].w, gold=sides[PLAYER].g, n=0;
     ctx.save();
+    if(ISO.on){
+      // The ghost is a footprint, and a footprint is ground: through the
+      // transform it lands as the exact projected diamond the building will
+      // occupy, valid in green and blocked in red, same as ever.
+      ctx.translate(-cam.x,-cam.y);
+      ctx.transform(1,0.5,-1,0.5,0,0);
+      for(const c of cells){
+        const pr=bldCost(PLAYER,placing);
+        const afford = purse>=pr.w && gold>=pr.g && sides[PLAYER].f>=pr.f;
+        const ok=tileFree(c.x,c.y,d.w,d.h,0,placing)&&afford;
+        if(ok){ purse-=pr.w; gold-=pr.g; n++; }
+        ctx.globalAlpha=.5; ctx.fillStyle=ok?'#7E9B54':'#C2453D';
+        ctx.fillRect(c.x*TILE,c.y*TILE,d.w*TILE,d.h*TILE);
+        ctx.globalAlpha=1; ctx.lineWidth=2; ctx.strokeStyle=ok?'#D3A23C':'#C2453D';
+        ctx.strokeRect(c.x*TILE,c.y*TILE,d.w*TILE,d.h*TILE);
+      }
+      ctx.restore();
+      if(cells.length>1){
+        const last=cells[cells.length-1];
+        const LS=scr(last.x*TILE+d.w*TILE/2, last.y*TILE);
+        ctx.fillStyle='#EBDFC4'; ctx.font='600 13px "Barlow Condensed", sans-serif'; ctx.textAlign='center';
+        ctx.fillText(n+' × '+bldCost(PLAYER,placing).w+' W', LS.x, LS.y-10);
+        ctx.textAlign='left';
+      }
+    } else {
     for(const c of cells){
       const pr=bldCost(PLAYER,placing);
       const afford = purse>=pr.w && gold>=pr.g && sides[PLAYER].f>=pr.f;
@@ -7184,6 +7413,7 @@ function draw(){
       ctx.fillText(n+' × '+bldCost(PLAYER,placing).w+' W', last.x*TILE-cam.x+TILE/2, last.y*TILE-cam.y-8);
       ctx.textAlign='left';
     }
+    }
     ctx.restore();
   }
 
@@ -7191,18 +7421,27 @@ function draw(){
   if(hover&&!hover.dead&&!sel.includes(hover)){
     ctx.strokeStyle='rgba(235,223,196,.55)'; ctx.lineWidth=1.4;
     if(hover.kind==='bld'){
+      if(ISO.on){
+        ctx.save();
+        ctx.translate(-cam.x,-cam.y);
+        ctx.transform(1,0.5,-1,0.5,0,0);
+        ctx.strokeRect(hover.tx*TILE-2, hover.ty*TILE-2, hover.w*TILE+4, hover.h*TILE+4);
+        ctx.restore();
+      } else
       ctx.strokeRect(hover.tx*TILE-cam.x-2, hover.ty*TILE-cam.y-2, hover.w*TILE+4, hover.h*TILE+4);
     } else if(hover.kind==='unit'){
       const hb=hitBox(hover);
       ctx.beginPath();
-      ctx.ellipse(hover.x-cam.x, hover.y-cam.y+8, hb.w, hb.w*0.42, 0, 0, 6.283);
+      { const HS=scr(hover.x,hover.y);
+      ctx.ellipse(HS.x, HS.y+8, hb.w, hb.w*0.42, 0, 0, 6.283); }
       ctx.stroke();
     } else {
-      ctx.beginPath(); ctx.arc(hover.x-cam.x, hover.y-cam.y, hover.r+5, 0, 6.283); ctx.stroke();
+      { const HS=scr(hover.x,hover.y);
+      ctx.beginPath(); ctx.arc(HS.x, HS.y, hover.r+5, 0, 6.283); ctx.stroke(); }
       // A bush is worth naming now that they are not all the same bush. What
       // is left in it is the part that decides where the next villager goes.
       if(hover.kind==='res'&&hover.amount>0){
-        const lx=hover.x-cam.x, ly=hover.y-cam.y-hover.r-14;
+        const HS2=scr(hover.x,hover.y), lx=HS2.x, ly=HS2.y-hover.r-14;
         const txt=resName(hover)+'  '+Math.ceil(hover.amount);
         ctx.font='600 11px Inter, system-ui, sans-serif';
         ctx.textAlign='center'; ctx.textBaseline='alphabetic';
@@ -7227,11 +7466,12 @@ function drawOverlay(W,H){
     const p=1-m.t/0.7, r=6+p*16;
     ctx.strokeStyle=(m.kind==='attack'?'rgba(194,69,61,':m.kind==='amove'?'rgba(214,126,52,':'rgba(211,162,60,')+(1-p).toFixed(2)+')';
     ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(m.x-cam.x,m.y-cam.y,r,0,6.283); ctx.stroke();
+    const MS=scr(m.x,m.y);
+    ctx.beginPath(); ctx.arc(MS.x,MS.y,r,0,6.283); ctx.stroke();
     if(m.kind!=='move'){
       ctx.beginPath();
-      ctx.moveTo(m.x-cam.x-r*0.6,m.y-cam.y-r*0.6); ctx.lineTo(m.x-cam.x+r*0.6,m.y-cam.y+r*0.6);
-      ctx.moveTo(m.x-cam.x+r*0.6,m.y-cam.y-r*0.6); ctx.lineTo(m.x-cam.x-r*0.6,m.y-cam.y+r*0.6);
+      ctx.moveTo(MS.x-r*0.6,MS.y-r*0.6); ctx.lineTo(MS.x+r*0.6,MS.y+r*0.6);
+      ctx.moveTo(MS.x+r*0.6,MS.y-r*0.6); ctx.lineTo(MS.x-r*0.6,MS.y+r*0.6);
       ctx.stroke();
     }
   }
@@ -7239,7 +7479,7 @@ function drawOverlay(W,H){
   // rally flag for a selected building
   const one=sel.length===1?sel[0]:null;
   if(one&&one.kind==='bld'&&one.rally&&one.owner===PLAYER){
-    const rx=one.rally.x-cam.x, ry=one.rally.y-cam.y;
+    const {x:rx,y:ry}=scr(one.rally.x,one.rally.y);
     ctx.strokeStyle='#D3A23C'; ctx.lineWidth=1.6;
     ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx,ry-18); ctx.stroke();
     ctx.fillStyle='#D3A23C';
@@ -7254,6 +7494,21 @@ function drawOverlay(W,H){
   }
 
   drawGrade(W,H);
+  if(DBG.on){
+    DBG.frames++;
+    const now2=performance.now();
+    if(now2-DBG.at>500){ DBG.fps=Math.round(DBG.frames*1000/(now2-DBG.at)); DBG.frames=0; DBG.at=now2; }
+    DBG.drawn=(DBG.byKind.bld|0)+(DBG.byKind.unit|0)+(DBG.byKind.res|0)+(DBG.byKind.dog|0);
+    ctx.save();
+    ctx.font='600 11px "Barlow Condensed", sans-serif';
+    ctx.fillStyle='rgba(12,10,6,.72)'; ctx.fillRect(8,HUD_TOP+8,236,52);
+    ctx.fillStyle='#EBDFC4';
+    ctx.fillText((ISO.on?'ISOMETRIC':'CLASSIC')+' · '+DBG.fps+' fps', 16, HUD_TOP+24);
+    ctx.fillText('drawn '+DBG.drawn+' (b'+(DBG.byKind.bld|0)+' u'+(DBG.byKind.unit|0)+
+                 ' r'+(DBG.byKind.res|0)+' d'+(DBG.byKind.dog|0)+') · culled '+DBG.culled, 16, HUD_TOP+38);
+    ctx.fillText('chunks '+chunkCache.size+' · sprites '+Object.keys(SPRITE).length, 16, HUD_TOP+52);
+    ctx.restore();
+  }
 
   {
     const fl=standardOf(PLAYER)||standardOf(ENEMY);
@@ -7545,7 +7800,7 @@ function goldSprite(v){
 }
 
 function drawRes(e){
-  const x=e.x-cam.x, y=e.y-cam.y;
+  const {x,y}=scr(e.x,e.y);
   if(e.type==='tree'){
     const v=(e.id*2654435761)>>>0;
     const sp=treeSprite(v);
@@ -9333,9 +9588,290 @@ function bldDamage(g,type,px,py,w,h,tier){
   g.restore();
 }
 
+/* ---- native isometric assets ----------------------------------------------
+   The first building re-authored for the isometric camera, and the drawing
+   rules every later conversion follows. Local coordinates put the footprint's
+   NORTH corner (world tx,ty) at the origin; for a footprint of bw x bh world
+   pixels the ground diamond is
+       N(0,0)  E(+bw,+bw/2)  S(+bw-bh,+(bw+bh)/2)  W(-bh,+bh/2)
+   Walls rise straight up (screen -y). The sun is the same sun as everywhere:
+   upper-left, so the south-west face is lit, the south-east face is shaded,
+   and the cast shadow on the ground was already drawn by the ground pass. */
+const ISOBLD={house:1};
+function isoBldSprite(type,owner){
+  const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE;
+  const wallH=30, roofH=26, pad=8;
+  const W2=bw+bh+pad*2, H2=(bw+bh)/2+wallH+roofH+pad*2;
+  const age=(sides[owner]&&sides[owner].age)|0;
+  return sprite('IB'+type+owner+'a'+age+'s'+(seasonNow===3?1:0), W2, H2, g=>{
+    const ox=bh+pad, oy=wallH+roofH+pad;      // where local (0,0) sits
+    g.translate(ox,oy);
+    const N=[0,0], E=[bw,bw/2], S=[bw-bh,(bw+bh)/2], Wp=[-bh,bh/2];
+    const up=(p,h)=>[p[0],p[1]-h];
+    const N2=up(N,wallH), E2=up(E,wallH), S2=up(S,wallH), W2p=up(Wp,wallH);
+    const poly=(pts)=>{ g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
+      for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0],pts[i][1]); g.closePath(); };
+    const wallCol=d.wall||'#D3C49D';
+    // ---- foundation: a rubble course standing just proud of the ground
+    poly([Wp,S,E,up(E,5),up(S,5),up(Wp,5)]);
+    g.fillStyle='#8A8272'; g.fill();
+    g.fillStyle='rgba(20,16,10,.30)'; poly([Wp,S,E,up(E,1.6),up(S,1.6),up(Wp,1.6)]); g.fill();
+    // ---- the south-west face, in the sun
+    poly([Wp,S,up(S,wallH),up(Wp,wallH)]);
+    g.fillStyle=wallCol; g.fill();
+    g.fillStyle='rgba(255,244,214,.16)'; g.fill();       // the sun on it
+    // half-timbering runs with the face, which is what keeps the wall reading
+    // as a receding plane rather than a flat trapezium
+    g.strokeStyle=sigOf(owner).beam; g.lineWidth=2;
+    for(let i=1;i<3;i++){
+      const t=i/3;
+      const gx=Wp[0]+(S[0]-Wp[0])*t, gy=Wp[1]+(S[1]-Wp[1])*t;
+      g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
+    }
+    g.beginPath();
+    g.moveTo(Wp[0]+1,Wp[1]-wallH*0.55+ (S[1]-Wp[1])*0);
+    g.lineTo(S[0]-1, S[1]-wallH*0.55); g.stroke();
+    // door on the lit face, at its centre
+    {
+      const t=0.5, gx=Wp[0]+(S[0]-Wp[0])*t, gy=Wp[1]+(S[1]-Wp[1])*t;
+      g.fillStyle='#4A3826'; g.fillRect(gx-5, gy-19, 10, 17);
+      g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(gx-5, gy-19, 10, 3);
+      g.fillStyle='#E8C15A'; g.beginPath(); g.arc(gx+7.5, gy-11, 1.5, 0, 6.283); g.fill();
+    }
+    // ---- the south-east face, in the shade
+    poly([S,E,up(E,wallH),up(S,wallH)]);
+    g.fillStyle=wallCol; g.fill();
+    g.fillStyle='rgba(38,48,78,.30)'; g.fill();          // sky-lit shade
+    g.strokeStyle='rgba(40,30,20,.45)'; g.lineWidth=2;
+    {
+      const t=0.5, gx=S[0]+(E[0]-S[0])*t, gy=S[1]+(E[1]-S[1])*t;
+      g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
+      // a shuttered window in the shade
+      g.fillStyle='#241C12'; g.fillRect(gx+8, gy-22, 8, 8);
+      g.fillStyle='rgba(120,104,72,.6)'; g.fillRect(gx+7, gy-23, 10, 1.6);
+    }
+    // the dark line where the two faces meet
+    g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
+    g.beginPath(); g.moveTo(S[0],S[1]); g.lineTo(S2[0],S2[1]); g.stroke();
+    // ---- the roof: a hip, its ridge shrunk in from the raised diamond
+    const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
+    const RL=[rc[0]-bw*0.26+bh*0.10, rc[1]+ (0)], RR=[rc[0]+bw*0.26-bh*0.10, rc[1]];
+    const roofC=roofOf(d.roof,owner);
+    // south-west slope
+    poly([W2p,S2,RR,RL]); g.fillStyle=roofC; g.fill();
+    g.fillStyle='rgba(255,244,210,.20)'; g.fill();
+    // south-east slope, shaded
+    poly([S2,E2,RR]); g.fillStyle=roofC; g.fill();
+    g.fillStyle='rgba(30,38,64,.34)'; g.fill();
+    // north-west sliver so the silhouette closes
+    poly([W2p,RL,N2]); g.fillStyle=roofC; g.fill();
+    g.fillStyle='rgba(255,250,224,.10)'; g.fill();
+    poly([N2,RL,RR,E2]); g.fillStyle=roofC; g.fill();
+    g.fillStyle='rgba(24,30,52,.18)'; g.fill();
+    // courses across the two visible slopes
+    g.strokeStyle='rgba(26,20,14,.22)'; g.lineWidth=1;
+    for(let i=1;i<4;i++){
+      const t=i/4;
+      g.beginPath();
+      g.moveTo(W2p[0]+(RL[0]-W2p[0])*t, W2p[1]+(RL[1]-W2p[1])*t);
+      g.lineTo(S2[0]+(RR[0]-S2[0])*t,  S2[1]+(RR[1]-S2[1])*t);
+      g.lineTo(E2[0]+(RR[0]-E2[0])*t,  E2[1]+(RR[1]-E2[1])*t);
+      g.stroke();
+    }
+    // eaves throw their line onto the walls
+    g.strokeStyle='rgba(20,16,10,.40)'; g.lineWidth=2.4;
+    g.beginPath(); g.moveTo(W2p[0],W2p[1]); g.lineTo(S2[0],S2[1]); g.lineTo(E2[0],E2[1]); g.stroke();
+    // the ridge, capped
+    g.strokeStyle='rgba(255,246,214,.5)'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+    if(seasonNow===3){                                    // winter lies on it
+      g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
+      g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+      g.fillStyle='rgba(242,247,251,.40)';
+      poly([W2p,S2,RR,RL]); g.fill();
+    }
+    // chimney at the ridge end
+    g.fillStyle='#6E6258'; g.fillRect(RR[0]-3, RR[1]-12, 6, 12);
+    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(RR[0]-3, RR[1]-12, 2, 12);
+    // contact: the building presses on its ground
+    g.strokeStyle='rgba(16,12,8,.35)'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(Wp[0],Wp[1]); g.lineTo(S[0],S[1]); g.lineTo(E[0],E[1]); g.stroke();
+  }, {ox:bh+pad, oy:wallH+roofH+pad});
+}
+/* ---- native isometric figures ---------------------------------------------
+   Units in the isometric view face where they are actually going: the world
+   heading is projected into the screen and the whole figure is built along
+   that vector - stride axis, weapon, shield, head - so facing is continuous
+   rather than eight canned frames, and every direction change is visible.
+   Drawn live, not baked: a figure is a couple of dozen strokes, and baking
+   every heading for every type, owner and pose is a cache nobody needs. */
+const ISO_CLS={vil:1, inf:1, arch:1, cav:1, king:1};
+function drawIsoUnit(u,x,y){
+  const K=unitKit(u.type), S=UNIT[u.type].r*1.35;
+  const col=teamColor(u.owner);
+  // the heading, projected
+  const wc=Math.cos(u.face), ws=Math.sin(u.face);
+  let fx=wc-ws, fy=(wc+ws)/2;
+  const fl=Math.hypot(fx,fy)||1; fx/=fl; fy/=fl;
+  const px2=-fy, py2=fx;                    // perpendicular, for the shoulders
+  const moving=Math.hypot(u.vx||0,u.vy||0)>6;
+  const stride=moving?Math.sin(u.bob)*S*0.34:0;
+  const lunge=u.swing>0? (u.swing>0.09?S*0.5:S*0.22) : 0;
+  const gx=x, gy=y;                          // feet on the ground point
+  contactShadow(ctx, gx, gy, S*0.85, S*0.34, 0.30);
+  if(sel.includes(u)){
+    ctx.strokeStyle='#E8C15A'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.ellipse(gx,gy,S+4,(S+4)*0.5,0,0,6.283); ctx.stroke();
+  }
+  if(u.type==='king'){
+    ctx.fillStyle='rgba(232,193,90,.12)';
+    ctx.beginPath(); ctx.ellipse(gx,gy,UNIT.king.aura*0.42,UNIT.king.aura*0.21,0,0,6.283); ctx.fill();
+  }
+  const bodyY=gy-S*1.55, headY=gy-S*2.15;
+  ctx.lineCap='round';
+  // legs stride along the heading
+  ctx.strokeStyle=K.shade; ctx.lineWidth=Math.max(2,S*0.24);
+  ctx.beginPath();
+  ctx.moveTo(gx-px2*S*0.20, bodyY+S*0.5);
+  ctx.lineTo(gx-px2*S*0.24+fx*stride, gy);
+  ctx.moveTo(gx+px2*S*0.20, bodyY+S*0.5);
+  ctx.lineTo(gx+px2*S*0.24-fx*stride, gy);
+  ctx.stroke();
+  // horse first, under the rider
+  if(K.horse){
+    ctx.fillStyle='#4E3A28';
+    ctx.beginPath();
+    ctx.ellipse(gx, gy-S*0.85, S*1.15, S*0.55, Math.atan2(fy,fx)*0.3, 0, 6.283); ctx.fill();
+    ctx.beginPath();                                  // its head, along the heading
+    ctx.arc(gx+fx*S*1.35, gy-S*1.15+fy*S*0.3, S*0.34, 0, 6.283); ctx.fill();
+    ctx.strokeStyle='#3A2C1E'; ctx.lineWidth=2;
+    for(const k of [-0.7,-0.25,0.25,0.7]){
+      ctx.beginPath();
+      ctx.moveTo(gx+fx*S*k*1.1, gy-S*0.6);
+      ctx.lineTo(gx+fx*S*k*1.1+(k<0?-1:1)*fx*stride*0.6, gy+S*0.1);
+      ctx.stroke();
+    }
+    ctx.fillStyle=col;                                // caparison
+    ctx.beginPath(); ctx.ellipse(gx, gy-S*0.8, S*0.85, S*0.4, 0, 0, 6.283); ctx.fill();
+  }
+  const mount=K.horse?-S*0.7:0;
+  // torso
+  ctx.fillStyle=K.cloth;
+  ctx.beginPath();
+  ctx.ellipse(gx+fx*lunge*0.3, bodyY+mount, S*0.62, S*0.80, 0, 0, 6.283); ctx.fill();
+  ctx.fillStyle=col;                                  // the tabard carries the crown
+  ctx.beginPath();
+  ctx.ellipse(gx+fx*lunge*0.3+fx*S*0.16, bodyY+mount+fy*S*0.1, S*0.40, S*0.55, 0, 0, 6.283); ctx.fill();
+  if(K.mail){ ctx.fillStyle='rgba(200,206,214,.35)';
+    ctx.beginPath(); ctx.ellipse(gx+fx*lunge*0.3, bodyY+mount-S*0.2, S*0.55, S*0.4, 0, 0, 6.283); ctx.fill(); }
+  // shield rides the off side
+  if(K.shield){
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.ellipse(gx-px2*S*0.60, bodyY+mount+S*0.1, S*0.26, S*0.42, Math.atan2(fy,fx)*0.4, 0, 6.283); ctx.fill();
+    ctx.strokeStyle='rgba(24,20,12,.55)'; ctx.lineWidth=1.4; ctx.stroke();
+    ctx.fillStyle='#C9CFD6';
+    ctx.beginPath(); ctx.arc(gx-px2*S*0.62, bodyY+mount+S*0.1, S*0.13, 0, 6.283); ctx.fill();
+  }
+  // the weapon points where the figure points
+  const hx=gx+px2*S*0.5+fx*(S*0.3+lunge), hy=bodyY+mount+S*0.1+fy*(S*0.2+lunge*0.4);
+  ctx.strokeStyle=K.shade; ctx.lineWidth=Math.max(2,S*0.2);
+  ctx.beginPath(); ctx.moveTo(gx+px2*S*0.35, bodyY+mount-S*0.1); ctx.lineTo(hx,hy); ctx.stroke();
+  const wep=K.wep==='tool'?K.tool:K.wep;
+  if(wep==='sword'){
+    ctx.strokeStyle='#241D12'; ctx.lineWidth=3.4;
+    ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+fx*S*1.0, hy+fy*S*1.0-S*0.5); ctx.stroke();
+    ctx.strokeStyle='#D3D9E0'; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+fx*S*1.0, hy+fy*S*1.0-S*0.5); ctx.stroke();
+  } else if(wep==='spear'||wep==='lance'){
+    const L=wep==='lance'?1.9:1.6;
+    ctx.strokeStyle='#241D12'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(hx-fx*S*0.7,hy-fy*S*0.7+S*0.5); ctx.lineTo(hx+fx*S*L, hy+fy*S*L-S*0.6); ctx.stroke();
+    ctx.strokeStyle='#7A5C36'; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(hx-fx*S*0.7,hy-fy*S*0.7+S*0.5); ctx.lineTo(hx+fx*S*L, hy+fy*S*L-S*0.6); ctx.stroke();
+    ctx.fillStyle='#D3D9E0';
+    ctx.beginPath(); ctx.arc(hx+fx*S*L, hy+fy*S*L-S*0.6, S*0.14, 0, 6.283); ctx.fill();
+  } else if(wep==='bow'){
+    ctx.strokeStyle='#5E4426'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(hx+fx*S*0.3, hy+fy*S*0.3-S*0.3, S*0.72,
+            Math.atan2(fy,fx)-1.2, Math.atan2(fy,fx)+1.2); ctx.stroke();
+    ctx.strokeStyle='rgba(235,225,200,.7)'; ctx.lineWidth=0.8;
+    const a1=Math.atan2(fy,fx)-1.2, a2=Math.atan2(fy,fx)+1.2, r=S*0.72;
+    ctx.beginPath();
+    ctx.moveTo(hx+fx*S*0.3+Math.cos(a1)*r, hy+fy*S*0.3-S*0.3+Math.sin(a1)*r);
+    ctx.lineTo(hx+fx*S*0.3+Math.cos(a2)*r, hy+fy*S*0.3-S*0.3+Math.sin(a2)*r);
+    ctx.stroke();
+  } else if(wep==='axe'||wep==='pick'||wep==='hoe'){
+    ctx.strokeStyle='#7A5C36'; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+fx*S*0.9, hy+fy*S*0.9-S*0.7); ctx.stroke();
+    ctx.fillStyle=wep==='pick'?'#9AA0A6':'#8B6A3E';
+    ctx.fillRect(hx+fx*S*0.9-2.4, hy+fy*S*0.9-S*0.7-2, 4.8, 3.4);
+  }
+  // head, nudged along the heading so even a standing figure points
+  ctx.fillStyle=K.skin;
+  ctx.beginPath(); ctx.arc(gx+fx*S*0.18, headY+mount, S*0.42, 0, 6.283); ctx.fill();
+  if(K.helm){ ctx.fillStyle=K.helm;
+    ctx.beginPath(); ctx.arc(gx+fx*S*0.18, headY+mount-S*0.1, S*0.40, Math.PI, 0); ctx.fill(); }
+  else if(K.hood){ ctx.fillStyle=K.shade;
+    ctx.beginPath(); ctx.arc(gx+fx*S*0.18, headY+mount-S*0.08, S*0.42, Math.PI*0.9, Math.PI*2.1); ctx.fill(); }
+  if(K.crown){ ctx.fillStyle='#E8C15A';
+    ctx.fillRect(gx+fx*S*0.18-S*0.34, headY+mount-S*0.5, S*0.68, S*0.2); }
+  // what it is carrying home
+  if(u.carry>0){
+    ctx.fillStyle=u.carryType==='w'?'#9A6B3F':u.carryType==='g'?'#D3A23C':'#B8562F';
+    ctx.fillRect(gx-4, headY+mount-S*0.9, 8, 5);
+  }
+  ctx.lineCap='butt';
+  if(u.flash>0){
+    ctx.fillStyle='rgba(255,110,80,'+Math.min(.6,u.flash*2.4)+')';
+    ctx.beginPath(); ctx.arc(gx,bodyY+mount,S+3,0,6.283); ctx.fill();
+  }
+  if(u.hp<u.maxHp-0.5){
+    const p2=Math.max(0,u.hp/u.maxHp);
+    ctx.fillStyle='rgba(20,16,11,.75)'; ctx.fillRect(gx-10,headY+mount-14,20,3.5);
+    ctx.fillStyle=p2>0.5?'#7E9B54':p2>0.25?'#D3A23C':'#C2453D';
+    ctx.fillRect(gx-10,headY+mount-14,20*p2,3.5);
+  }
+}
+
+function drawIsoBld(b,W,H){
+  const S0=scr(b.tx*TILE, b.ty*TILE);
+  const sp=isoBldSprite(b.type,b.owner);
+  blit(sp, S0.x-sp.ox, S0.y-sp.oy);
+  if(b.flash>0){
+    ctx.globalAlpha=Math.min(.5,b.flash*2);
+    ctx.fillStyle='rgba(255,110,80,1)';
+    ctx.fillRect(S0.x-sp.ox, S0.y-sp.oy, sp.w, sp.h);
+    ctx.globalAlpha=1;
+  }
+  if(sel.includes(b)){
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
+    ctx.transform(1,0.5,-1,0.5,0,0);
+    ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2.5;
+    ctx.strokeRect(b.tx*TILE-2, b.ty*TILE-2, b.w*TILE+4, b.h*TILE+4);
+    ctx.restore();
+  }
+  barHp(b, S0.x-28, S0.y-sp.oy+6, 56);
+}
+
 function drawBld(b){
   const d=BLD[b.type];
-  const px=b.tx*TILE-cam.x, py=b.ty*TILE-cam.y, w=b.w*TILE, h=b.h*TILE;
+  const w=b.w*TILE, h=b.h*TILE;
+  // In the isometric view an unconverted building is a clearly-temporary
+  // billboard: the classic sprite stood upright, centred on the footprint,
+  // its base resting on the footprint's south corner so it neither floats
+  // nor buries. Converted types take over below, one at a time.
+  let px,py;
+  if(ISO.on){
+    if(ISOBLD[b.type]&&!b.building){ drawIsoBld(b); return; }
+    const C=scr(b.x, b.y);
+    px=C.x-w/2;
+    py=C.y+(b.w+b.h)*TILE/4 - h - 6;
+  } else {
+    px=b.tx*TILE-cam.x; py=b.ty*TILE-cam.y;
+  }
   const ghost = b.owner!==PLAYER && visAt(b.x,b.y)!==2;   // remembered, not currently seen
   ctx.save();
   if(ghost) ctx.globalAlpha=0.55;
@@ -10290,7 +10826,7 @@ function cloth(g,px,py,L,owner,ph){
 function drawFallen(){
   for(const q of wrecks){
     if(q.owner!==PLAYER && visAt(q.x,q.y)===0) continue;
-    const x=q.tx*TILE-cam.x, y=q.ty*TILE-cam.y;
+    const {x,y}=scr(q.tx*TILE, q.ty*TILE);
     if(x<-300||y<-300||x>innerWidth+300||y>innerHeight+300) continue;
     const rb=rubbleSprite(q.type);
     ctx.globalAlpha=Math.min(1, q.t/1.8);          // and the grass takes it back
@@ -10304,7 +10840,7 @@ function drawFallen(){
     ctx.globalAlpha=1;
   }
   for(const q of fallen){
-    const p=q.t/q.life, x=q.x-cam.x, y=q.y-cam.y;
+    const p=q.t/q.life, S9=scr(q.x,q.y), x=S9.x, y=S9.y;
     if(x<-60||y<-60||x>innerWidth+60||y>innerHeight+60) continue;
     if(q.tree!==undefined){                          // a felled trunk, going over
       const sp=treeSprite(q.tree);
@@ -10331,7 +10867,8 @@ function drawFallen(){
 }
 
 function drawUnit(u){
-  const x=u.x-cam.x, y=u.y-cam.y, cls=UNIT[u.type].cls;
+  const {x,y}=scr(u.x,u.y), cls=UNIT[u.type].cls;
+  if(ISO.on && ISO_CLS[cls]){ drawIsoUnit(u,x,y); return; }
   const S=u.r*1.35;
   const moving=Math.hypot(u.vx||0,u.vy||0)>6;
   // Standing men are not statues: a slow shift keeps a held line alive.
@@ -11942,6 +12479,7 @@ function openStats(){
 /* -------------------------------- input -------------------------------- */
 function toWorld(mx,my){
   if(V3.on&&V3.ready) return v3Ray(mx,my);
+  if(ISO.on) return isoInv(mx+cam.x, my+cam.y);
   return {x:mx+cam.x, y:my+cam.y};
 }
 // Picking a figure in 3D by where it is drawn rather than by where its feet
@@ -12129,8 +12667,33 @@ function onScreen(wx,wy,pad){
 }
 // One entry point for "what is under this pixel", so the two views can answer
 // it differently without every caller knowing which one is on.
+// Figure picking in the isometric view, screen-space, exactly the way the 3D
+// view earned it: a click on a body maps to ground BEHIND the feet under the
+// inverse projection, and whatever stands on that ground - usually a tree -
+// steals the pick. So figures are tested where they are drawn: a box up from
+// the projected ground point, nearest wins, a live figure beating scenery on
+// a tie. Buildings and open ground still resolve through the inverse, which
+// is exact.
+function isoPickEnt(sx,sy){
+  let best=null, bd=1e9;
+  for(const e of ents){
+    if(e.dead||e.kind==='bld') continue;
+    if(e.owner>=0&&!knows(e)) continue;
+    if(e.owner<0&&visAt(e.x,e.y)===0) continue;
+    const S=scr(e.x,e.y);
+    const half=e.kind==='unit'?hitBox(e).w+4:(e.r||10)+8;
+    const up=e.kind==='unit'?36:(e.type==='tree'?40:22);
+    if(sx<S.x-half||sx>S.x+half||sy>S.y+10||sy<S.y-up) continue;
+    const d=Math.abs(sx-S.x)+Math.abs(sy-(S.y-up*0.4))-(e.kind==='unit'?10:0);
+    if(d<bd){ bd=d; best=e; }
+  }
+  if(best) return best;
+  const w=isoInv(sx+cam.x, sy+cam.y);
+  return pickAt(w.x,w.y);
+}
 function pickHere(sx,sy){
   if(V3.on&&V3.ready) return v3PickEnt(sx,sy);
+  if(ISO.on) return isoPickEnt(sx,sy);
   const w=toWorld(sx,sy);
   return pickAt(w.x,w.y);
 }
@@ -12229,12 +12792,25 @@ addEventListener('mouseup',e=>{
     mouse.dragging=false; cx=mouse.sx; cy=mouse.sy;
   }
   if(mouse.dragging){
-    // In 3D a screen rectangle is not a world rectangle, but the axis-aligned
-    // world box through its two corners is close enough to feel the same.
-    const a1=toWorld(mouse.sx,mouse.sy), a2=toWorld(e.clientX,e.clientY);
-    const x0=Math.min(a1.x,a2.x), x1=Math.max(a1.x,a2.x);
-    const y0=Math.min(a1.y,a2.y), y1=Math.max(a1.y,a2.y);
-    const got=ents.filter(u=>!u.dead&&u.kind==='unit'&&u.owner===PLAYER&&u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1);
+    let got;
+    if(ISO.on){
+      // In the isometric view the drawn rectangle IS the meaningful shape, so
+      // test each unit's projected position against it directly.
+      const sx0=Math.min(mouse.sx,e.clientX), sx1=Math.max(mouse.sx,e.clientX);
+      const sy0=Math.min(mouse.sy,e.clientY), sy1=Math.max(mouse.sy,e.clientY);
+      got=ents.filter(u=>{
+        if(u.dead||u.kind!=='unit'||u.owner!==PLAYER) return false;
+        const S=scr(u.x,u.y);
+        return S.x>=sx0&&S.x<=sx1&&S.y>=sy0&&S.y<=sy1;
+      });
+    } else {
+      // In 3D a screen rectangle is not a world rectangle, but the axis-aligned
+      // world box through its two corners is close enough to feel the same.
+      const a1=toWorld(mouse.sx,mouse.sy), a2=toWorld(e.clientX,e.clientY);
+      const x0=Math.min(a1.x,a2.x), x1=Math.max(a1.x,a2.x);
+      const y0=Math.min(a1.y,a2.y), y1=Math.max(a1.y,a2.y);
+      got=ents.filter(u=>!u.dead&&u.kind==='unit'&&u.owner===PLAYER&&u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1);
+    }
     sel=add?sel.concat(got.filter(g=>!sel.includes(g))):got;
   } else {
     const p=pickHere(cx,cy);
@@ -12256,7 +12832,7 @@ cv.addEventListener('contextmenu',e=>e.preventDefault());
 function commandAt(mx,my,force){
   if(placing&&!aiming){ placing=null; lineDrag=null; updatePanel(); return; }
   const w=toWorld(mx,my);
-  let t=pickAt(w.x,w.y);
+  let t=ISO.on?isoPickEnt(mx,my):pickAt(w.x,w.y);
   // your own soldiers standing on a building must not hide it from an order:
   // right-clicking a covered keep should still repair or garrison it
   if(t&&t.kind==='unit'&&t.owner===PLAYER){
@@ -12392,6 +12968,7 @@ addEventListener('keydown',e=>{
   if(k==='j'&&!e.ctrlKey){ if(document.getElementById('courts').style.display==='grid') closeAll(); else openCourts(); return; }
   if(k==='m'){ toggleSound(); return; }
   if(k==='`'||k==='~'){ v3Toggle(); return; }
+  if(k==='f3'){ DBG.on=!DBG.on; DBG.at=performance.now(); DBG.frames=0; e.preventDefault(); return; }
   if(V3.on){
     if(k==='['){ v3Orbit(-0.13,0,1); return; }
     if(k===']'){ v3Orbit(0.13,0,1); return; }
@@ -12541,6 +13118,18 @@ document.getElementById('kingBtn').onclick=findKing;
       document.getElementById('detailVal').textContent=RSCALE_NAME(RSCALE);
       log('Detail: '+RSCALE_NAME(RSCALE)+'.');
     });
+  }
+  const ib=document.getElementById('isoBtn');
+  if(ib){
+    const isoLbl=()=>{ document.getElementById('isoVal').textContent=ISO.on?'Isometric (preview)':'Classic'; };
+    isoLbl();
+    ib.onclick=()=>{
+      if(V3.on) v3Toggle();                 // one view at a time
+      isoToggle();
+      isoLbl();
+      log(ISO.on?'Isometric view. A port in progress: unconverted things stand as markers.':'Classic view.');
+      sfx('select');
+    };
   }
   const gb=document.getElementById('gradeBtn');
   if(gb){

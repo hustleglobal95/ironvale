@@ -124,6 +124,29 @@ noise consonant per syllable, pitched to the breed, a mastiff at 170Hz and a
 terrier at 600 — on the birds' own rules: a long uneven interval, only when
 there is a dog on screen to have made the sound, and never over a fight.
 
+**An isometric port is underway, behind a flag.** The menu's Renderer row (and
+nothing else — the classic view stays the default and untouched) switches the
+same running game onto the classic 2:1 diamond: `x' = x−y, y' = (x+y)/2`, exact
+both ways, no trigonometry. The port's load-bearing observation is that this
+projection is an affine map of the ground plane, which canvas applies natively —
+so the terrain chunks, worn sites, farm aprons, paths, canopy shade, fog runs
+and placement footprints all land as pixel-correct diamonds through one
+`setTransform`, with no re-authoring. Only things with height need new art, and
+they convert one type at a time: the house is native — two visible faces, the
+south-west lit and the south-east in sky-shade under the same sun as everything
+else, a hip roof with two-tone slopes, a foundation course, its cast shadow on
+the ground — and units of every human class face where they are going,
+continuously: the stride axis, weapon, bow, lance, shield and head are all built
+along the projected heading, so a direction change is visible in the figure
+rather than picked from eight canned frames. Everything not yet converted stands
+as its classic sprite grounded on the projected footprint, the clearly-marked
+temporary fallback a port needs. Selection, orders, placement, collision and
+picking are exact under the projection — figures are picked in screen space
+where they are drawn, the way the 3D view earned first, because a click on a
+body maps to ground behind the feet and whatever stands there would steal the
+pick. F3 shows the debug overlay: renderer, fps, drawn and culled counts, cache
+sizes — in either view.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
@@ -367,6 +390,7 @@ npm test
 | `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed — and, for the standing board: that the same work moves any crown's score by the same amount, that the running order is always shown while the figures stay closed until you have found the crown, that the marauders never count as a crown, and that an old save seeds your books back out of the stats it already carried |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 | `houses.test.js` | The four crowns' faces: that each roofs its whole settlement in one material and no two share it, that the roof in the picture is the roof on the table, that a knight of another house is built differently rather than tinted differently, that a roof carries snow in winter and not in summer, that only the two winter boundaries rebake a settlement, and that none of it is in the save |
+| `iso.test.js` | The isometric slice: the projection round-trips exactly, the toggle holds the view centre and is remembered, clicking a figure at its drawn position selects it, an order lands on the pointed ground and the unit arrives, the ghost matches the aimed tile, the drawn box selects what it covers, a figure south of a house draws in front of it, and off means off |
 | `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
 
 Individual suites: `npm run test:water`, and so on.
@@ -392,7 +416,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the sixteen suites
+test/*.test.js         the seventeen suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block
