@@ -74,6 +74,7 @@ window.__IV={
            s.w>=d.cost.w && s.g>=d.cost.g && s.f>=d.cost.f;
   },
   plant:plantStandard, flag:()=>standardOf(PLAYER),
+  order:(sx,sy)=>commandAt(sx,sy), ghost:(sx,sy,t)=>ghostTile(sx,sy,BLD[t]),
   calm:()=>{ battleHeat=0; },
   sfxObj:()=>SFX, play:(n)=>sfx(n), heat:()=>battleHeat, wet2:()=>visWater,
   sparksN:()=>sparks.length, puffsN:()=>puffs.length, shake:()=>shake,
@@ -88,6 +89,8 @@ window.__IV={
   dogs:()=>dogs, bark:(b)=>SFX.bark(b), raze:(b)=>demolish(b),
   terr:()=>terrain, MW:()=>MAP_W,
   grade:()=>({on:gradeOn, key:GR.key}), setGrade:(v)=>setGrade(v),
+  iso:()=>ISO.on, isoToggle:(v)=>isoToggle(v), isoP:(x,y)=>isoP(x,y), scr:(x,y)=>scr(x,y),
+  dbg:()=>{ DBG.on=true; return DBG; },
   setHeat:(v)=>{ battleHeat=v; }, mix:()=>gradeMix(),
   sparks:()=>sparks, puffs:()=>puffs, wrecks:()=>wrecks,
   hitFx:(a,b)=>hitDebris(a,b), rubble:(t)=>rubbleSprite(t),
