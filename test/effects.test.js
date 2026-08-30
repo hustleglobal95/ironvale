@@ -212,6 +212,49 @@ const { chromium, wrap, boot } = require('./harness');
     return g.rubble('house') === g.rubble('house') && g.rubble('house').w > 0;
   }));
 
+  // ---- the grade -----------------------------------------------------------
+  // Split-toning, not tinting: with the grade on, the sun corner of the frame
+  // is warmer and the far corner is cooler and deeper than the same frame
+  // without it - measured off the canvas itself, in the world area, away from
+  // anything animated. And the grade follows the year and the fighting: the
+  // gradient cache key moves with both, which is also what proves the cache
+  // rebuilds when it should and only then.
+  const grade = await page.evaluate(async () => {
+    const g = window.__IV;
+    g.reveal();                                  // a corner of fog grades to fog
+    const cv = document.getElementById('game'), c2 = cv.getContext('2d');
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    g.cam().x = tc.x - innerWidth / 2; g.cam().y = tc.y - innerHeight / 2;
+    const raf = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const sample = (x, y) => {
+      const d = c2.getImageData(Math.round(x * devicePixelRatio), Math.round(y * devicePixelRatio), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    };
+    const grab = async () => { await raf();
+      return { tl: sample(40, 90), br: sample(innerWidth - 40, innerHeight - 250) }; };
+    g.setGrade(false); const off = await grab();
+    g.setGrade(true);  const on  = await grab();
+    // the cache key follows the year and the heat
+    const k0 = g.grade().key;
+    g.setTime(g.pace().year * 0.60); await raf();
+    const k1 = g.grade().key;
+    g.setHeat(1.4); await raf();
+    const k2 = g.grade().key;
+    g.setHeat(0); await raf();
+    let stored = null;
+    try { stored = localStorage.getItem('ironvale.v3.grade'); } catch (e) {}
+    return { off, on, k0, k1, k2, on2: g.grade().on, stored };
+  });
+  const lum = c => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
+  const coolShift = (grade.on.br[2] - grade.on.br[0]) - (grade.off.br[2] - grade.off.br[0]);
+  ok('the far corner goes cooler and deeper under the grade (blue-red ' +
+     (grade.off.br[2] - grade.off.br[0]) + ' -> ' + (grade.on.br[2] - grade.on.br[0]) +
+     ', luminance ' + Math.round(lum(grade.off.br)) + ' -> ' + Math.round(lum(grade.on.br)) + ')',
+     coolShift > 2 && lum(grade.on.br) < lum(grade.off.br));
+  ok('the grade follows the year (' + grade.k0 + ' -> ' + grade.k1 + ')', grade.k0 !== grade.k1);
+  ok('and tightens with the fighting (' + grade.k1 + ' -> ' + grade.k2 + ')', grade.k1 !== grade.k2);
+  ok('the switch is remembered (' + grade.stored + ')', grade.on2 === true && grade.stored === '1');
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
