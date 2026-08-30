@@ -55,32 +55,46 @@ const { chromium, wrap, boot, hud } = require('./harness');
      'px, p90 ' + pick.p90.toFixed(0) + 'px)', pick.med < 28 && pick.p90 < 84);
 
   // ---- figures are picked where they are drawn, not where their feet land
+  // This used to sample whichever of your villagers happened to be on screen,
+  // which made it a coin toss: a figure with a tree or a raider on the same
+  // pixels is drawn behind them and picking the one in front is the correct
+  // answer, so the assertion was really measuring where the wildlife had
+  // wandered. It places its own probes on ground it has checked is clear.
   const figs = await page.evaluate(() => {
     const g = window.__IV;
-    const all = g.ents().filter(e => !e.dead && (e.kind === 'unit' || e.kind === 'bld'));
-    const us = g.ents().filter(e => e.kind === 'unit' && e.owner === 0).slice(0, 12);
-    let hit = 0, n = 0;
-    for (const u of us) {
+    // Chosen in screen space and taken back into the world, so every probe is
+    // inside the view by construction. Placing them at world offsets from the
+    // centre put some of them off the edge, and the count then depended on
+    // where the camera happened to be sitting.
+    const clear = (x, y) => g.ents().every(e =>
+      e.dead || Math.hypot(e.x - x, e.y - y) > 96);
+    const spots = [];
+    for (let r = 0; r < 3 && spots.length < 6; r++)
+      for (let c = 0; c < 4 && spots.length < 6; c++) {
+        const sx = 120 + c * (innerWidth - 240) / 3;
+        const sy = 140 + r * (innerHeight - 380) / 2;
+        const w = g.tw(sx, sy);
+        if (w && clear(w.x, w.y)) spots.push([w.x, w.y]);
+      }
+    const probes = spots.map(([x, y]) => g.spawn(0, 'militia', x, y));
+    for (const u of probes) { u.vx = u.vy = 0; u.task = null; u.target = null; }
+    let hit = 0, n = 0; const miss = [];
+    for (const u of probes) {
+      u.vx = u.vy = 0;
       const s = g.proj(u.x, u.y);
       if (!s || s[0] < 20 || s[0] > innerWidth - 20 || s[1] < 60 || s[1] > innerHeight - 180) continue;
-      // A figure with somebody else standing on the same pixels is drawn
-      // behind them, and picking the one in front is the right answer. Only
-      // figures standing alone can say anything about whether picking works.
-      let crowded = false;
-      for (const o of all) {
-        if (o === u) continue;
-        const t = g.proj(o.x, o.y);
-        if (t && Math.hypot(t[0] - s[0], t[1] - s[1]) < 26) { crowded = true; break; }
-      }
-      if (crowded) continue;
       n++;
       const p = g.pickH(s[0], s[1] - 8);
       if (p && p.id === u.id) hit++;
+      else miss.push({ want: u.type, got: p && p.t, at: [Math.round(s[0]), Math.round(s[1])] });
     }
-    return { hit, n };
+    for (const u of probes) u.dead = true;
+    return { hit, n, miss };
   });
+  if (figs.miss.length) console.log('   ' + JSON.stringify(figs.miss));
   ok('every figure on screen picks as itself (' + figs.hit + '/' + figs.n + ')',
-     figs.n > 0 && figs.hit === figs.n);
+     figs.n >= 4 && figs.hit === figs.n);
+
 
   // ---- the game is actually playable through the 3D camera. Every mouse path
   // funnels through toWorld(), so this is the assertion that the funnel holds.

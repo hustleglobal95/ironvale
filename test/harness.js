@@ -34,6 +34,17 @@ window.__IV={
   usprite:(t,o,p,d)=>unitSprite(t,o,p,d), ugeom:(t)=>unitGeom(t),
   bsprite:(t,o,tr,v)=>bldSprite(t,o,tr,v), bpad:(t)=>bldPad(t),
   sig:(o)=>sigOf(o), roofCol:(t,o)=>roofOf(BLD[t].roof,o), season:()=>seasonNow,
+  score:(o)=>scoreOf(o), tally:(o)=>sides[o].tally, met:()=>metCrown,
+  // The real scan takes a slice per vision beat, so a suite that wants the
+  // whole map swept has to let enough beats go by.
+  scout:()=>{ for(let i=0;i<24;i++) scoutCrowns(); }, board:()=>{ renderScoreboard();
+    return [...document.querySelectorAll('#scoreBoard .sbrow')].map(r=>({
+      pos:r.querySelector('.pos').textContent,
+      name:r.querySelector('.h').textContent,
+      n:r.querySelector('.n').textContent,
+      un:r.querySelector('.n').classList.contains('un'),
+      you:r.classList.contains('you'), out:r.classList.contains('out'),
+      w:r.querySelector('.bar i').style.width })); },
   // Pixels out of a baked sprite, so a suite can ask what a roof is actually
   // painted and whether two figures have the same outline.
   px:(sp)=>{ const c=document.createElement('canvas');

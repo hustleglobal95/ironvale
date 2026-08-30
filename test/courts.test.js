@@ -261,6 +261,95 @@ const { chromium, wrap, boot, hud } = require('./harness');
 
   const h = await hud(page);
   ok('the game is still running', h.over === 'none');
+
+  // ---- the standing of the crowns ------------------------------------------
+  // scoreOf() used to zero the gathered, killed and razed terms for anyone but
+  // the player - not by design, but because nobody else kept books - so every
+  // AI crown scored on units, buildings, age and techs alone and came out low.
+  // By this point in the suite the four crowns hold very different ground, so
+  // the thing to measure is not that they score alike but that the same work
+  // moves any of their scores by the same amount.
+  const even = await page.evaluate(() => {
+    const g = window.__IV;
+    const before = [0, 1, 3, 4].map(o => g.score(o));
+    for (const o of [0, 1, 3, 4]) {
+      const t = g.tally(o);
+      t.gathered += 1000; t.killed += 10; t.razed += 5;
+    }
+    const after = [0, 1, 3, 4].map(o => g.score(o));
+    return after.map((v, i) => v - before[i]);
+  });
+  ok('the same work moves any crown\'s score by the same amount (' +
+     even.join(', ') + ')', new Set(even).size === 1 && even[0] > 0);
+
+  const board = await page.evaluate(() => {
+    const g = window.__IV;
+    g.sides()[1].age = 2; g.tally(1).gathered = 9000; g.tally(1).razed = 6;
+    g.sides()[3].age = 1; g.tally(3).gathered = 3000; g.tally(3).razed = 0;
+    g.tally(4).gathered = 200; g.tally(0).gathered = 5000; g.tally(0).killed = 12;
+    while (g.met().length) g.met().pop();
+    const blind = g.board();
+    g.reveal(); g.scout();
+    g.met()[4] = 0;                                   // Saltmere still unfound
+    const seen = g.board();
+    return { blind, seen, met: g.met().slice(),
+             scores: [0, 1, 3, 4].map(o => g.score(o)) };
+  });
+  // Ordered by the true score, whatever that order happens to be — hardcoding
+  // the names would only be testing the numbers this test injected.
+  const order = board.seen.map(r => r.name.replace(' \u00b7 you', ''));
+  const truth = [[0, 'Ironvale'], [1, 'the Crimson Host'], [3, 'Thornhollow'], [4, 'Saltmere']]
+    .map(([o, n], i) => [n, board.scores[i]])
+    .sort((a, c) => c[1] - a[1]).map(x => x[0]);
+  ok('the board is ordered by score (' + order.join(' > ') + ')',
+     JSON.stringify(order) === JSON.stringify(truth));
+  ok('the running order shows even for crowns you have not found',
+     board.blind.length === 4 && board.blind.every(r => r.pos !== '—'));
+  ok('but their figures do not (' + board.blind.map(r => r.n).join(' ') + ')',
+     board.blind.filter(r => r.un).length === 3 && !board.blind.find(r => r.you).un);
+  ok('finding a crown opens its books (' + board.seen.map(r => r.n).join(' ') + ')',
+     board.seen.filter(r => r.un).length === 1 &&
+     board.seen.find(r => r.name.indexOf('Saltmere') === 0).un);
+  // The bar is how far apart they are, which a rider can carry back; it is the
+  // figures that stay closed.
+  ok('and the gap is always drawn (' + board.blind.map(r => r.w).join(' ') + ')',
+     board.blind[0].w === '100%' && board.blind.every(r => /^\d+%$/.test(r.w)) &&
+     new Set(board.blind.map(r => r.w)).size > 1);
+
+  // The marauders own entities but are not a crown. Counting one as "found"
+  // spent a slot in the scan and stopped it before it reached a crown standing
+  // in plain sight, which is exactly how Saltmere stayed hidden on a revealed
+  // map.
+  ok('the marauders are not a crown and never count as one',
+     !board.met[2] && board.met[1] === 1 && board.met[3] === 1);
+
+  // ---- and it all survives a save -----------------------------------------
+  const books2 = await page.evaluate(() => {
+    const g = window.__IV;
+    const before = [0, 1, 3, 4].map(o => g.score(o));
+    const snap = JSON.parse(JSON.stringify(g.snap()));
+    g.restore(snap);
+    const after = [0, 1, 3, 4].map(o => g.score(o));
+    // and a save from before any crown kept books still opens on the right
+    // number for the player, because their figures were never lost - they are
+    // in `stats`, and the tally is seeded back out of it
+    const old = JSON.parse(JSON.stringify(snap));
+    for (const d of old.sides) delete d.tally;
+    delete old.met;
+    g.restore(old);
+    return { before, after, legacy: g.tally(0).gathered, stats: g.stats().gathered,
+             met: g.met().length };
+  });
+  ok('a save carries every crown\'s books (' + books2.before.join(',') + ' -> ' +
+     books2.after.join(',') + ')',
+     JSON.stringify(books2.before) === JSON.stringify(books2.after));
+  // The player's figures were never lost in an old save - they are in `stats` -
+  // so the tally is seeded back out of it rather than opening on zero, which
+  // would visibly drop your own score the moment you loaded.
+  ok('and an old save seeds the player\'s books back out of its stats (' +
+     Math.round(books2.legacy) + ' gathered, from ' + Math.round(books2.stats) + ' recorded)',
+     books2.legacy > 0 && Math.abs(books2.legacy - books2.stats) < 1);
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
