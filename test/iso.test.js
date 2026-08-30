@@ -169,9 +169,9 @@ const { chromium, wrap, boot } = require('./harness');
   const contract = await page.evaluate(() => {
     const g = window.__IV, sizes = [];
     for (const a of [0, 1, 2, 3]) for (const set of [0, 1, 3, 4]) sizes.push(g.hMain(a, set));
-    for (let st = 0; st < 5; st++) sizes.push(g.hStage(st));
+    for (let st = 0; st < 5; st++) for (const a of [0, 1, 2, 3]) sizes.push(g.hStage(st, a));
     for (let d2 = 1; d2 <= 3; d2++) sizes.push(g.hDmg(d2));
-    for (const o of [0, 1, 3, 4]) sizes.push(g.hTint(o));
+    for (const o of [0, 1, 3, 4]) for (const a of [0, 1, 2, 3]) sizes.push(g.hTint(o, a));
     const w0 = sizes[0].w, h0 = sizes[0].h, ox0 = sizes[0].ox, oy0 = sizes[0].oy;
     return { n: sizes.length,
              same: sizes.every(sp => sp.w === w0 && sp.h === h0 && sp.ox === ox0 && sp.oy === oy0) };
@@ -243,6 +243,21 @@ const { chromium, wrap, boot } = require('./harness');
   });
   ok('advancing the age re-dresses the house without touching the entity (' +
      age.diff + ' px change)', age.same && age.diff > 60);
+
+  // ---- four ages are four different houses, not one house re-dressed -------
+  const four = await page.evaluate(() => {
+    const g = window.__IV, px = a => g.px(g.hMain(a, 0));
+    const P = [px(0), px(1), px(2), px(3)];
+    const d = (a, b2) => { let n = 0;
+      for (let i = 0; i < a.length; i += 4)
+        if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 1] - b2[i + 1]) +
+            Math.abs(a[i + 2] - b2[i + 2]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+      return n; };
+    return { d01: d(P[0], P[1]), d12: d(P[1], P[2]), d23: d(P[2], P[3]) };
+  });
+  ok('four ages, four houses: hovel/cottage/burgher/townhouse (' +
+     four.d01 + '/' + four.d12 + '/' + four.d23 + ' px between neighbours)',
+     four.d01 > 800 && four.d12 > 800 && four.d23 > 600);
 
   // ---- selection follows the footprint, not the roof -----------------------
   const selTest = await page.evaluate(() => {

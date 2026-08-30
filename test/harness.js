@@ -91,7 +91,7 @@ window.__IV={
   grade:()=>({on:gradeOn, key:GR.key}), setGrade:(v)=>setGrade(v),
   iso:()=>ISO.on, isoToggle:(v)=>isoToggle(v), isoP:(x,y)=>isoP(x,y), scr:(x,y)=>scr(x,y),
   dbg:()=>{ DBG.on=true; return DBG; },
-  hMain:(a,set)=>isoHouseMain(a,set|0), hTint:(o)=>isoHouseTint(o), hStage:(st)=>isoHouseStage(st),
+  hMain:(a,set)=>isoHouseMain(a,set|0), hTint:(o,a)=>isoHouseTint(o,a==null?1:a), hStage:(st,a)=>isoHouseStage(st,a==null?1:a),
   hDmg:(d)=>isoHouseDmg(d), hShadow:()=>isoShadowSprite('house'), hGeo:()=>isoGeo('house'),
   hBuildStage:(b)=>isoBuildStage(b), hDmgState:(b)=>isoDmgState(b),
   setHeat:(v)=>{ battleHeat=v; }, mix:()=>gradeMix(),
