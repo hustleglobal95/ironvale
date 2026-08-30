@@ -162,13 +162,34 @@ nearly-done house with the ladder still against the wall - and damage is three
 overlays driven by health, with smoke and a restrained fire at the worst of it.
 Every layer of every state shares exactly the same canvas and the same anchor,
 so a state change cannot move, resize or drift the building - an assertion
-holds that for all twenty-eight sprites there are. The footprint is the
+holds that for all fifty-five sprites there are. The footprint is the
 simulation's whole knowledge of the house: the roof overhangs it freely,
 blocks nothing, and selection follows the footprint, never the picture. F3
 draws the footprints and anchors over the running game. Chasing why it once
 drew nothing turned up a real bug: a second `onScreen` declaration, added for
 the 3D view, had been shadowing the isometric one and silently mis-culling
 the ground pass.
+
+**Four ages, four houses.** Not one house re-dressed: the Dark Age raises a
+round wattle-and-daub hovel under a ragged cone of thatch, with a smoke hole,
+a woodpile and nothing anyone would call a window. The Feudal Age builds the
+timber-framed cottage - limewashed wattle between oak posts, deep thatch that
+hangs past the walls, one shuttered window, and a louvre at the ridge because
+a chimney is still an age away. The Castle Age raises the two-storey burgher
+house: coursed stone below, a jettied floor of close-studded timber standing
+proud of it with its soffit in shadow, mullioned windows, and the family's
+first chimney. The Imperial Age builds in dressed ashlar - a string course
+between the floors, quoins on the near corner, an arched door with voussoirs,
+glazed windows, a dormer in the roof, a gilt finial and a brick chimney tall
+enough to draw. The crown's roofing material - slate, clay tile and the rest -
+takes over from the Castle Age on; before that thatch is thatch whoever grows
+old under it, so the early ages fold to a single bake each. Construction
+follows the age too: a hovel is not framed square, so it goes up as a stake
+ring, bent poles reaching for the apex, the wattle ring rising, and thatch
+climbing the poles from the west, while the framed ages raise the materials of
+the house that will actually stand there. The pennant is keyed by age as well
+as owner, because each roof puts its high point somewhere different and a
+pennant has to fly from something.
 
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark

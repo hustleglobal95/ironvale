@@ -9649,10 +9649,15 @@ function bldDamage(g,type,px,py,w,h,tier){
 const ISOBLD={house:1};
 function isoGeo(type){
   const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE;
-  const wallH=30, roofH=26, pad=10;
-  return { bw, bh, wallH, roofH, pad,
-           W:bw+bh+pad*2, H:(bw+bh)/2+wallH+roofH+pad*2,
-           ax:bh+pad, ay:wallH+roofH+pad*2 };   // anchor: local px of world (tx,ty)
+  // wallH is the ground floor, upH the storey the later ages add, top the
+  // headroom for chimneys and finials. Every state of every age shares this
+  // one canvas and one anchor - the contract - so the geometry is sized for
+  // the tallest house that will ever stand on it, and the hovel simply uses
+  // less of it.
+  const wallH=30, roofH=26, upH=22, top=14, pad=10;
+  return { bw, bh, wallH, roofH, upH, top, pad,
+           W:bw+bh+pad*2, H:(bw+bh)/2+wallH+upH+roofH+top+pad*2,
+           ax:bh+pad, ay:wallH+upH+roofH+top+pad*2 };   // anchor: local px of world (tx,ty)
 }
 // The ground diamond and its raised counterpart, in anchor-relative pixels.
 function isoCorners(G){
@@ -9679,137 +9684,481 @@ function isoShadowSprite(type){
 
 // ---- the main sprite, resolved by architectureSet + age, never by owner.
 // The architecture set is the crown's building tradition - Ironvale roofs in
-// slate, the Crimson Host in clay tile, and so on, the same materials the
-// classic renderer gives them - and it is a different axis from the crown
-// itself: the crown's COLOUR arrives only in the tint layer. Five sets at
-// most, so five bakes serve every house on the map.
+// slate, the Crimson Host in clay tile, and so on - and it is a different
+// axis from the crown itself: the crown's COLOUR arrives only in the tint
+// layer. The set only matters from the Castle Age on, because thatch is
+// thatch whoever grows old under it, so the early ages fold to one bake.
+//
+// Four ages, four houses. Not one house re-dressed: the Dark Age raises a
+// round wattle-and-daub hovel under a ragged cone of thatch; the Feudal Age
+// a timber-framed cottage with deep eaves and a smoke louvre; the Castle Age
+// a two-storey burgher house, stone below, jettied timber above, and the
+// family's first chimney; the Imperial Age an ashlar townhouse with a string
+// course, glazed windows, a dormer and a gilt finial. The door stays centred
+// on the lit face in every century, which is what lets the crown's cloth
+// (the tint layer) hang beside it without knowing the age.
+function isoDoorAt(G){
+  const {S,Wc}=isoCorners(G);
+  return [Wc[0]+(S[0]-Wc[0])*0.5, Wc[1]+(S[1]-Wc[1])*0.5];
+}
+function hovelGeo(G){
+  const cx=(G.bw-G.bh)/2, cy=(G.bw+G.bh)/4;
+  const rx=G.bw*0.40*1.414, ry=G.bw*0.40*0.707;   // a world circle, projected
+  return {cx, cy, rx, ry, hutH:G.wallH*0.62, coneH:G.roofH*1.05};
+}
 function isoHouseMain(age,set){
   const G=isoGeo('house');
-  return sprite('IH:main:s'+(set|0)+':a'+age+(seasonNow===3?':w':''), G.W, G.H, g=>{
+  return sprite('IH:main:s'+(age>=2?(set|0):0)+':a'+age+(seasonNow===3?':w':''), G.W, G.H, g=>{
     g.translate(G.ax, G.ay);
-    const {N,E,S,Wc}=isoCorners(G), wallH=G.wallH, roofH=G.roofH;
-    const up=(p,h)=>[p[0],p[1]-h];
-    const N2=up(N,wallH), E2=up(E,wallH), S2=up(S,wallH), W2=up(Wc,wallH);
-    // foundation
-    isoPoly(g,[Wc,S,E,up(E,5),up(S,5),up(Wc,5)]);
-    g.fillStyle= age>=2 ? '#9A927E' : '#8A8272'; g.fill();
-    g.fillStyle='rgba(20,16,10,.30)'; isoPoly(g,[Wc,S,E,up(E,1.6),up(S,1.6),up(Wc,1.6)]); g.fill();
-    // south-west face, in the sun
-    isoPoly(g,[Wc,S,S2,W2]);
-    g.fillStyle= age===0 ? '#C2B292' : '#D3C49D'; g.fill();
-    g.fillStyle='rgba(255,244,214,.16)'; g.fill();
-    g.strokeStyle='rgba(78,60,38,.62)'; g.lineWidth=2;
-    for(let i=1;i<3;i++){
-      const t=i/3, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
-      g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
-    }
-    g.beginPath();
-    g.moveTo(Wc[0]+1, Wc[1]-wallH*0.55);
-    g.lineTo(S[0]-1,  S[1]-wallH*0.55); g.stroke();
-    if(age===0){                                     // making do
-      g.fillStyle='rgba(88,74,52,.30)';
-      g.fillRect(Wc[0]+6, Wc[1]-wallH*0.8, 9, 8);
-      g.fillRect(S[0]-16, S[1]-wallH*0.5, 8, 7);
-    }
-    if(age>=2){                                      // the masons' footing
-      g.fillStyle='rgba(120,116,106,.9)';
-      isoPoly(g,[Wc,S,up(S,9),up(Wc,9)]); g.fill();
-      g.strokeStyle='rgba(50,44,34,.4)'; g.lineWidth=1;
-      g.beginPath(); g.moveTo(Wc[0],Wc[1]-9); g.lineTo(S[0],S[1]-9); g.stroke();
-    }
-    // door, centred on the lit face
-    {
-      const t=0.5, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
-      g.fillStyle='#4A3826'; g.fillRect(gx-5, gy-19, 10, 17);
-      g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(gx-5, gy-19, 10, 3);
-      if(age>=2){ g.strokeStyle='rgba(60,64,70,.8)'; g.lineWidth=1.2;   // iron straps
-        g.beginPath(); g.moveTo(gx-5,gy-14); g.lineTo(gx+5,gy-14);
-        g.moveTo(gx-5,gy-7); g.lineTo(gx+5,gy-7); g.stroke(); }
-      g.fillStyle='#E8C15A'; g.beginPath(); g.arc(gx+7.5, gy-11, 1.5, 0, 6.283); g.fill();
-    }
-    // south-east face, in sky-shade
-    isoPoly(g,[S,E,E2,S2]);
-    g.fillStyle= age===0 ? '#C2B292' : '#D3C49D'; g.fill();
-    g.fillStyle='rgba(38,48,78,.30)'; g.fill();
-    g.strokeStyle='rgba(40,30,20,.45)'; g.lineWidth=2;
-    {
-      const t=0.5, gx=S[0]+(E[0]-S[0])*t, gy=S[1]+(E[1]-S[1])*t;
-      g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
-      g.fillStyle='#241C12'; g.fillRect(gx+8, gy-22, 8, 8);
-      if(age>=3){                                    // glass, one pale diagonal
-        g.fillStyle='rgba(168,196,214,.4)'; g.fillRect(gx+8, gy-22, 8, 8);
-        g.strokeStyle='rgba(235,245,255,.6)'; g.lineWidth=1.2;
-        g.beginPath(); g.moveTo(gx+8,gy-15); g.lineTo(gx+14,gy-21); g.stroke();
-      }
-      g.fillStyle='rgba(120,104,72,.6)'; g.fillRect(gx+7, gy-23, 10, 1.6);
-    }
-    g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
-    g.beginPath(); g.moveTo(S[0],S[1]); g.lineTo(S2[0],S2[1]); g.stroke();
-    // hip roof
-    const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
-    const RL=[rc[0]-G.bw*0.26+G.bh*0.10, rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10, rc[1]];
-    const roofC= age===0 ? '#8A7448' : roofOf(BLD.house.roof, set|0);
-    isoPoly(g,[W2,S2,RR,RL]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,244,210,.20)'; g.fill();
-    isoPoly(g,[S2,E2,RR]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(30,38,64,.34)'; g.fill();
-    isoPoly(g,[W2,RL,N2]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,250,224,.10)'; g.fill();
-    isoPoly(g,[N2,RL,RR,E2]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(24,30,52,.18)'; g.fill();
-    g.strokeStyle='rgba(26,20,14,.22)'; g.lineWidth=1;
-    for(let i=1;i<4;i++){
-      const t=i/4;
-      g.beginPath();
-      g.moveTo(W2[0]+(RL[0]-W2[0])*t, W2[1]+(RL[1]-W2[1])*t);
-      g.lineTo(S2[0]+(RR[0]-S2[0])*t, S2[1]+(RR[1]-S2[1])*t);
-      g.lineTo(E2[0]+(RR[0]-E2[0])*t, E2[1]+(RR[1]-E2[1])*t);
-      g.stroke();
-    }
-    if(age>=3){                                      // a carved line under the eaves
-      g.strokeStyle='rgba(240,228,190,.4)'; g.lineWidth=1;
-      g.beginPath(); g.moveTo(W2[0],W2[1]-1.5); g.lineTo(S2[0],S2[1]-1.5); g.lineTo(E2[0],E2[1]-1.5); g.stroke();
-    }
-    g.strokeStyle='rgba(20,16,10,.40)'; g.lineWidth=2.4;
-    g.beginPath(); g.moveTo(W2[0],W2[1]); g.lineTo(S2[0],S2[1]); g.lineTo(E2[0],E2[1]); g.stroke();
-    g.strokeStyle='rgba(255,246,214,.5)'; g.lineWidth=2;
-    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
-    if(seasonNow===3){
-      g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
-      g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
-      g.fillStyle='rgba(242,247,251,.40)'; isoPoly(g,[W2,S2,RR,RL]); g.fill();
-    }
-    g.fillStyle='#6E6258'; g.fillRect(RR[0]-3, RR[1]-12, 6, 12);
-    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(RR[0]-3, RR[1]-12, 2, 12);
+    if(age<=0) drawHovel(g,G);
+    else if(age===1) drawCottage(g,G);
+    else if(age===2) drawBurgher(g,G,set|0);
+    else drawTownhouse(g,G,set|0);
+    const {E,S,Wc}=isoCorners(G);
     g.strokeStyle='rgba(16,12,8,.35)'; g.lineWidth=2;
-    g.beginPath(); g.moveTo(Wc[0],Wc[1]); g.lineTo(S[0],S[1]); g.lineTo(E[0],E[1]); g.stroke();
-  }, {ox:isoGeo('house').ax, oy:isoGeo('house').ay});
+    if(age>0){ g.beginPath(); g.moveTo(Wc[0],Wc[1]); g.lineTo(S[0],S[1]); g.lineTo(E[0],E[1]); g.stroke(); }
+  }, {ox:G.ax, oy:G.ay});
 }
 
-// ---- the crown, as its own layer: cloth by the door, a pennant at the ridge
-function isoHouseTint(owner){
-  const G=isoGeo('house');
-  return sprite('IH:tint:o'+owner, G.W, G.H, g=>{
+// The Dark Age: one round room of wattle and daub, a cone of thatch with a
+// smoke hole, a woodpile, and nothing anyone would call a window.
+function drawHovel(g,G){
+  const {cx,cy,rx,ry,hutH,coneH}=hovelGeo(G);
+  g.fillStyle='rgba(116,96,66,.35)';
+  g.beginPath(); g.ellipse(cx,cy+1,rx*1.35,ry*1.35,0,0,6.283); g.fill();
+  const wallPath=()=>{ g.beginPath();
+    g.moveTo(cx-rx,cy-hutH); g.lineTo(cx-rx,cy);
+    g.ellipse(cx,cy,rx,ry,0,Math.PI,0,true);
+    g.lineTo(cx+rx,cy-hutH); g.closePath(); };
+  wallPath(); g.fillStyle='#B4A177'; g.fill();
+  g.save(); wallPath(); g.clip();
+  g.fillStyle='rgba(255,244,214,.12)'; g.fillRect(cx-rx,cy-hutH-2,rx*0.55,hutH+ry+4);
+  g.fillStyle='rgba(38,48,78,.26)'; g.fillRect(cx+rx*0.14,cy-hutH-2,rx,hutH+ry+4);
+  g.strokeStyle='rgba(90,72,48,.4)'; g.lineWidth=1.2;      // withies showing through
+  for(const t of [-0.62,-0.2,0.3,0.66]){
+    g.beginPath(); g.moveTo(cx+rx*t,cy-hutH+1); g.lineTo(cx+rx*t,cy+ry*0.8); g.stroke();
+  }
+  g.fillStyle='rgba(88,74,52,.30)';                        // daub gone from two patches
+  g.fillRect(cx-rx*0.72,cy-hutH*0.4,8,6); g.fillRect(cx+rx*0.42,cy-2,7,5);
+  g.restore();
+  // the door, low, with a branch for a lintel
+  const dx=cx-rx*0.5, dy=cy+ry*0.82;
+  g.fillStyle='#3E2F1E'; g.fillRect(dx-4.5,dy-12,9,12);
+  g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(dx-4.5,dy-12,9,2.5);
+  g.strokeStyle='#6B5233'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(dx-6,dy-12.5); g.lineTo(dx+6,dy-12.5); g.stroke();
+  // the roof: a cone of thatch, ragged at the eave
+  const by=cy-hutH+2, brx=rx*1.3, bry=brx*0.5, ax2=cx, ay2=cy-hutH-coneH;
+  const conePath=()=>{ g.beginPath();
+    g.moveTo(ax2,ay2); g.lineTo(cx-brx,by);
+    g.ellipse(cx,by,brx,bry,0,Math.PI,0,true); g.closePath(); };
+  conePath(); g.fillStyle='#83704A'; g.fill();
+  g.save(); conePath(); g.clip();
+  g.fillStyle='rgba(255,244,210,.16)'; g.fillRect(cx-brx,ay2-2,brx*0.92,coneH+bry+6);
+  g.fillStyle='rgba(30,38,64,.28)'; g.fillRect(cx+brx*0.08,ay2-2,brx,coneH+bry+6);
+  g.strokeStyle='rgba(52,40,24,.30)'; g.lineWidth=1.2;     // strands off the apex
+  for(const t of [-0.85,-0.55,-0.25,0.05,0.35,0.65,0.9]){
+    const eyy=by+bry*Math.sin(Math.acos(Math.max(-1,Math.min(1,t))));
+    g.beginPath(); g.moveTo(ax2,ay2+2); g.lineTo(cx+brx*t,eyy); g.stroke();
+  }
+  g.strokeStyle='rgba(60,46,26,.25)'; g.lineWidth=1;       // the hoops that bind them
+  g.beginPath(); g.ellipse(cx,by-coneH*0.38,brx*0.62,bry*0.62,0,0.15,Math.PI-0.15); g.stroke();
+  g.beginPath(); g.ellipse(cx,by-coneH*0.70,brx*0.34,bry*0.34,0,0.15,Math.PI-0.15); g.stroke();
+  g.restore();
+  g.strokeStyle='rgba(94,76,46,.8)'; g.lineWidth=1.4;      // the ragged eave
+  for(let i=0;i<=8;i++){
+    const a3=0.15+(Math.PI-0.3)*i/8;
+    const exx=cx+brx*Math.cos(a3), eyy=by+bry*Math.sin(a3);
+    g.beginPath(); g.moveTo(exx,eyy); g.lineTo(exx+(i%3-1),eyy+3.5+(i%2)*1.5); g.stroke();
+  }
+  // the smoke hole, and the soot the smoke has left
+  g.fillStyle='rgba(30,24,16,.35)';
+  g.beginPath(); g.ellipse(cx+2,ay2+2.5,3,4.4,0,0,6.283); g.fill();
+  g.fillStyle='rgba(24,18,10,.85)';
+  g.beginPath(); g.ellipse(cx+2,ay2+5,3.4,2.2,0.3,0,6.283); g.fill();
+  // the woodpile
+  const wx=cx+rx*0.95, wy=cy+ry*0.55;
+  for(const [ox2,oy2,c3] of [[0,0,'#6B5233'],[6.5,1,'#7A5E38'],[3,-4,'#8A6E45']]){
+    g.fillStyle=c3; g.beginPath(); g.ellipse(wx+ox2,wy+oy2,3.6,2.8,0,0,6.283); g.fill();
+    g.fillStyle='rgba(214,190,150,.75)';
+    g.beginPath(); g.ellipse(wx+ox2,wy+oy2,1.5,1.1,0,0,6.283); g.fill();
+  }
+  if(seasonNow===3){
+    const srx=brx*0.45, sry=bry*0.45, sy=by-coneH*0.55;
+    g.fillStyle='rgba(242,247,251,.85)';
+    g.beginPath(); g.moveTo(ax2,ay2); g.lineTo(cx-srx,sy);
+    g.ellipse(cx,sy,srx,sry,0,Math.PI,0,true); g.closePath(); g.fill();
+    g.strokeStyle='rgba(246,250,253,.8)'; g.lineWidth=2;
+    g.beginPath(); g.ellipse(cx,by,brx,bry,0,0.2,Math.PI-0.2); g.stroke();
+  }
+  g.strokeStyle='rgba(16,12,8,.35)'; g.lineWidth=1.6;
+  g.beginPath(); g.ellipse(cx,cy,rx,ry,0,0.1,Math.PI-0.1); g.stroke();
+}
+
+// The Feudal Age: the timber-framed cottage. Limewashed wattle between oak
+// posts, a stone step, one shuttered window, and a roof of thatch that sits
+// proud of the walls and hangs past them, with a louvre where the smoke gets
+// out - a chimney is still an age away.
+function drawCottage(g,G){
+  const {N,E,S,Wc}=isoCorners(G), wallH=G.wallH, roofH=G.roofH;
+  const up=(p,h)=>[p[0],p[1]-h];
+  const S2=up(S,wallH), W2=up(Wc,wallH), E2=up(E,wallH);
+  isoPoly(g,[Wc,S,E,up(E,5),up(S,5),up(Wc,5)]);
+  g.fillStyle='#8A8272'; g.fill();
+  g.fillStyle='rgba(20,16,10,.30)'; isoPoly(g,[Wc,S,E,up(E,1.6),up(S,1.6),up(Wc,1.6)]); g.fill();
+  isoPoly(g,[Wc,S,S2,W2]); g.fillStyle='#D3C49D'; g.fill();
+  g.fillStyle='rgba(255,244,214,.16)'; g.fill();
+  g.strokeStyle='rgba(78,60,38,.68)'; g.lineWidth=2.2;
+  for(let i=0;i<=3;i++){
+    const t=i/3, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
+    g.beginPath(); g.moveTo(gx,gy-2); g.lineTo(gx,gy-wallH+2); g.stroke();
+  }
+  g.lineWidth=1.8;
+  g.beginPath(); g.moveTo(Wc[0]+1,Wc[1]-wallH*0.55); g.lineTo(S[0]-1,S[1]-wallH*0.55); g.stroke();
+  g.beginPath(); g.moveTo(Wc[0]+2,Wc[1]-4);
+  g.lineTo(Wc[0]+(S[0]-Wc[0])/3,Wc[1]+(S[1]-Wc[1])/3-wallH+3); g.stroke();
+  const D=isoDoorAt(G);
+  g.fillStyle='#9A927E'; g.beginPath(); g.ellipse(D[0]+1,D[1]+1.5,7,2.6,0,0,6.283); g.fill();
+  g.fillStyle='#4A3826'; g.fillRect(D[0]-5,D[1]-19,10,17);
+  g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(D[0]-5,D[1]-19,10,3);
+  g.fillStyle='#E8C15A'; g.beginPath(); g.arc(D[0]+7.5,D[1]-11,1.5,0,6.283); g.fill();
+  isoPoly(g,[S,E,E2,S2]); g.fillStyle='#D3C49D'; g.fill();
+  g.fillStyle='rgba(38,48,78,.30)'; g.fill();
+  g.strokeStyle='rgba(40,30,20,.5)'; g.lineWidth=2;
+  {
+    const t=0.5, gx=S[0]+(E[0]-S[0])*t, gy=S[1]+(E[1]-S[1])*t;
+    g.beginPath(); g.moveTo(gx,gy-3); g.lineTo(gx,gy-wallH+2); g.stroke();
+    g.fillStyle='#241C12'; g.fillRect(gx+8,gy-22,8,8);
+    g.fillStyle='#7A5E38'; g.fillRect(gx+16.5,gy-22,3.5,8);   // shutter thrown back
+    g.fillStyle='rgba(120,104,72,.7)'; g.fillRect(gx+7,gy-23,13,1.6);
+  }
+  g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
+  g.beginPath(); g.moveTo(S[0],S[1]); g.lineTo(S2[0],S2[1]); g.stroke();
+  // the woodpile every winter needs
+  {
+    const wx=E[0]-10, wy=E[1]-2;
+    for(const [ox2,oy2,c3] of [[0,0,'#6B5233'],[6.5,1,'#7A5E38'],[3,-4,'#8A6E45']]){
+      g.fillStyle=c3; g.beginPath(); g.ellipse(wx+ox2,wy+oy2,3.6,2.8,0,0,6.283); g.fill();
+      g.fillStyle='rgba(214,190,150,.75)';
+      g.beginPath(); g.ellipse(wx+ox2,wy+oy2,1.5,1.1,0,0,6.283); g.fill();
+    }
+  }
+  // deep thatch: the roof ring stands proud of the walls and dips past the top
+  const c2=[(G.bw-G.bh)/2,(G.bw+G.bh)/4], k=1.06;
+  const ex2=p=>[c2[0]+(p[0]-c2[0])*k, c2[1]+(p[1]-c2[1])*k];
+  const bN=up(ex2(N),wallH-3), bE=up(ex2(E),wallH-3), bS=up(ex2(S),wallH-3), bW=up(ex2(Wc),wallH-3);
+  const rc=[(bN[0]+bS[0])/2,(bN[1]+bS[1])/2-roofH];
+  const RL=[rc[0]-G.bw*0.26+G.bh*0.10,rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10,rc[1]];
+  const roofC='#96804E';
+  isoPoly(g,[bW,bS,RR,RL]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,244,210,.22)'; g.fill();
+  isoPoly(g,[bS,bE,RR]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(30,38,64,.34)'; g.fill();
+  isoPoly(g,[bW,RL,bN]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,250,224,.10)'; g.fill();
+  isoPoly(g,[bN,RL,RR,bE]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(24,30,52,.18)'; g.fill();
+  g.strokeStyle='rgba(50,38,20,.24)'; g.lineWidth=1;
+  for(let i=1;i<5;i++){
+    const t=i/5;
+    g.beginPath();
+    g.moveTo(bW[0]+(RL[0]-bW[0])*t,bW[1]+(RL[1]-bW[1])*t);
+    g.lineTo(bS[0]+(RR[0]-bS[0])*t,bS[1]+(RR[1]-bS[1])*t);
+    g.lineTo(bE[0]+(RR[0]-bE[0])*t,bE[1]+(RR[1]-bE[1])*t);
+    g.stroke();
+  }
+  g.strokeStyle='rgba(112,92,54,.85)'; g.lineWidth=1.6;    // the ragged eave
+  for(let i=0;i<=6;i++){
+    const t=i/6, exx=bW[0]+(bS[0]-bW[0])*t, eyy=bW[1]+(bS[1]-bW[1])*t;
+    g.beginPath(); g.moveTo(exx,eyy); g.lineTo(exx+(i%3-1)*0.8,eyy+3+(i%2)*1.6); g.stroke();
+  }
+  for(let i=1;i<=5;i++){
+    const t=i/5, exx=bS[0]+(bE[0]-bS[0])*t, eyy=bS[1]+(bE[1]-bS[1])*t;
+    g.beginPath(); g.moveTo(exx,eyy); g.lineTo(exx,eyy+2.6+(i%2)); g.stroke();
+  }
+  // ridge cap, and the louvre the smoke leaves by
+  g.strokeStyle='rgba(74,58,30,.9)'; g.lineWidth=3;
+  g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+  g.strokeStyle='rgba(255,246,214,.35)'; g.lineWidth=1.2;
+  g.beginPath(); g.moveTo(RL[0],RL[1]-1.6); g.lineTo(RR[0],RR[1]-1.6); g.stroke();
+  g.fillStyle='#4E3C26'; g.fillRect((RL[0]+RR[0])/2-3,(RL[1]+RR[1])/2-7,6,6);
+  g.fillStyle='rgba(20,14,8,.8)'; g.fillRect((RL[0]+RR[0])/2-2,(RL[1]+RR[1])/2-6,4,3);
+  if(seasonNow===3){
+    g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
+    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+    g.fillStyle='rgba(242,247,251,.40)'; isoPoly(g,[bW,bS,RR,RL]); g.fill();
+  }
+}
+
+// The Castle Age: the burgher house. A ground floor of coursed stone, a
+// jettied upper floor of close-studded timber standing proud of it with its
+// soffit in shadow, mullioned windows, and the first chimney. From here on
+// the roof is in the crown's own material.
+function drawBurgher(g,G,set){
+  const {N,E,S,Wc}=isoCorners(G), roofH=G.roofH;
+  const up=(p,h)=>[p[0],p[1]-h];
+  const h1=G.wallH*0.9, h2=h1+G.upH;
+  const c2=[(G.bw-G.bh)/2,(G.bw+G.bh)/4], k=1.09;
+  const ex2=p=>[c2[0]+(p[0]-c2[0])*k, c2[1]+(p[1]-c2[1])*k];
+  const eN=ex2(N), eE=ex2(E), eS=ex2(S), eW=ex2(Wc);
+  isoPoly(g,[Wc,S,E,up(E,4),up(S,4),up(Wc,4)]);
+  g.fillStyle='#9A927E'; g.fill();
+  // the ground floor, in coursed stone
+  isoPoly(g,[Wc,S,up(S,h1),up(Wc,h1)]); g.fillStyle='#A29A88'; g.fill();
+  g.fillStyle='rgba(255,244,214,.14)'; g.fill();
+  g.strokeStyle='rgba(50,44,34,.4)'; g.lineWidth=1;
+  for(let i=1;i<4;i++){
+    g.beginPath(); g.moveTo(Wc[0],Wc[1]-h1*i/4); g.lineTo(S[0],S[1]-h1*i/4); g.stroke();
+  }
+  isoPoly(g,[S,E,up(E,h1),up(S,h1)]); g.fillStyle='#A29A88'; g.fill();
+  g.fillStyle='rgba(38,48,78,.30)'; g.fill();
+  g.strokeStyle='rgba(40,34,26,.35)';
+  for(let i=1;i<4;i++){
+    g.beginPath(); g.moveTo(S[0],S[1]-h1*i/4); g.lineTo(E[0],E[1]-h1*i/4); g.stroke();
+  }
+  {  // a barred window low on the shade face
+    const gx=S[0]+(E[0]-S[0])*0.62, gy=S[1]+(E[1]-S[1])*0.62;
+    g.fillStyle='#241C12'; g.fillRect(gx,gy-16,9,7);
+    g.strokeStyle='rgba(70,74,80,.9)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(gx+3,gy-16); g.lineTo(gx+3,gy-9);
+    g.moveTo(gx+6,gy-16); g.lineTo(gx+6,gy-9); g.stroke();
+  }
+  // the door, in a stone surround, iron-strapped
+  const D=isoDoorAt(G);
+  g.fillStyle='#B7AF9D'; g.fillRect(D[0]-7,D[1]-21,14,20);
+  g.fillStyle='#4A3826'; g.fillRect(D[0]-5,D[1]-19,10,17);
+  g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(D[0]-5,D[1]-19,10,3);
+  g.strokeStyle='rgba(60,64,70,.85)'; g.lineWidth=1.2;
+  g.beginPath(); g.moveTo(D[0]-5,D[1]-14); g.lineTo(D[0]+5,D[1]-14);
+  g.moveTo(D[0]-5,D[1]-7); g.lineTo(D[0]+5,D[1]-7); g.stroke();
+  g.fillStyle='#E8C15A'; g.beginPath(); g.arc(D[0]+8.5,D[1]-11,1.5,0,6.283); g.fill();
+  // the jetty: the upper floor stands proud, and its soffit is in shadow
+  isoPoly(g,[up(Wc,h1),up(S,h1),up(eS,h1),up(eW,h1)]);
+  g.fillStyle='rgba(24,18,10,.5)'; g.fill();
+  isoPoly(g,[up(S,h1),up(E,h1),up(eE,h1),up(eS,h1)]);
+  g.fillStyle='rgba(18,14,8,.55)'; g.fill();
+  const uW=up(eW,h1), uS=up(eS,h1), uE=up(eE,h1);
+  const tW=up(eW,h2), tS=up(eS,h2), tE=up(eE,h2), tN=up(eN,h2);
+  // the upper floor: close-studded timber over plaster
+  isoPoly(g,[uW,uS,tS,tW]); g.fillStyle='#DCCDA2'; g.fill();
+  g.fillStyle='rgba(255,244,214,.16)'; g.fill();
+  g.strokeStyle='rgba(64,48,28,.8)'; g.lineWidth=1.8;
+  for(let i=0;i<=4;i++){
+    const t=i/4, gx=uW[0]+(uS[0]-uW[0])*t, gy=uW[1]+(uS[1]-uW[1])*t;
+    g.beginPath(); g.moveTo(gx,gy); g.lineTo(gx,gy-G.upH); g.stroke();
+  }
+  g.lineWidth=2.2;
+  g.beginPath(); g.moveTo(uW[0],uW[1]); g.lineTo(uS[0],uS[1]); g.stroke();   // the bressummer
+  g.beginPath(); g.moveTo(tW[0],tW[1]); g.lineTo(tS[0],tS[1]); g.stroke();
+  for(const t of [0.32,0.68]){                       // two mullioned windows
+    const gx=uW[0]+(uS[0]-uW[0])*t, gy=uW[1]+(uS[1]-uW[1])*t;
+    g.fillStyle='#241C12'; g.fillRect(gx-4,gy-G.upH*0.78,8,9);
+    g.strokeStyle='rgba(120,100,64,.9)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(gx,gy-G.upH*0.78); g.lineTo(gx,gy-G.upH*0.78+9); g.stroke();
+  }
+  isoPoly(g,[uS,uE,tE,tS]); g.fillStyle='#DCCDA2'; g.fill();
+  g.fillStyle='rgba(38,48,78,.32)'; g.fill();
+  g.strokeStyle='rgba(50,38,22,.6)'; g.lineWidth=1.6;
+  for(let i=1;i<3;i++){
+    const t=i/3, gx=uS[0]+(uE[0]-uS[0])*t, gy=uS[1]+(uE[1]-uS[1])*t;
+    g.beginPath(); g.moveTo(gx,gy); g.lineTo(gx,gy-G.upH); g.stroke();
+  }
+  g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
+  g.beginPath(); g.moveTo(uS[0],uS[1]); g.lineTo(tS[0],tS[1]); g.stroke();
+  // the roof, in the crown's material
+  const rc=[(tN[0]+tS[0])/2,(tN[1]+tS[1])/2-roofH];
+  const RL=[rc[0]-(G.bw*0.26-G.bh*0.10)*k,rc[1]], RR=[rc[0]+(G.bw*0.26-G.bh*0.10)*k,rc[1]];
+  const roofC=roofOf(BLD.house.roof,set|0);
+  isoPoly(g,[tW,tS,RR,RL]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,244,210,.20)'; g.fill();
+  isoPoly(g,[tS,tE,RR]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(30,38,64,.34)'; g.fill();
+  isoPoly(g,[tW,RL,tN]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,250,224,.10)'; g.fill();
+  isoPoly(g,[tN,RL,RR,tE]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(24,30,52,.18)'; g.fill();
+  g.strokeStyle='rgba(26,20,14,.26)'; g.lineWidth=1;
+  for(let i=1;i<5;i++){
+    const t=i/5;
+    g.beginPath();
+    g.moveTo(tW[0]+(RL[0]-tW[0])*t,tW[1]+(RL[1]-tW[1])*t);
+    g.lineTo(tS[0]+(RR[0]-tS[0])*t,tS[1]+(RR[1]-tS[1])*t);
+    g.lineTo(tE[0]+(RR[0]-tE[0])*t,tE[1]+(RR[1]-tE[1])*t);
+    g.stroke();
+  }
+  g.strokeStyle='rgba(20,16,10,.40)'; g.lineWidth=2.2;
+  g.beginPath(); g.moveTo(tW[0],tW[1]); g.lineTo(tS[0],tS[1]); g.lineTo(tE[0],tE[1]); g.stroke();
+  g.strokeStyle='rgba(255,246,214,.5)'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+  // the chimney the cottage never had
+  g.fillStyle='#8E8678'; g.fillRect(RR[0]-3.5,RR[1]-15,7,15);
+  g.fillStyle='rgba(255,255,255,.16)'; g.fillRect(RR[0]-3.5,RR[1]-15,2.4,15);
+  g.fillStyle='#7A7264'; g.fillRect(RR[0]-4.5,RR[1]-16.5,9,2.6);
+  if(seasonNow===3){
+    g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
+    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+    g.fillStyle='rgba(242,247,251,.40)'; isoPoly(g,[tW,tS,RR,RL]); g.fill();
+    g.fillStyle='rgba(246,250,253,.9)'; g.fillRect(RR[0]-4.5,RR[1]-18.5,9,2);
+  }
+}
+
+// The Imperial Age: the ashlar townhouse. Two floors of dressed stone with a
+// string course between them and a cornice under the eaves, quoins on the
+// near corner, an arched door with voussoirs, glazed windows, a dormer in
+// the roof, a gilt finial, and a brick chimney tall enough to draw.
+function drawTownhouse(g,G,set){
+  const {N,E,S,Wc}=isoCorners(G), roofH=G.roofH;
+  const up=(p,h)=>[p[0],p[1]-h];
+  const hT=G.wallH+G.upH;
+  const N2=up(N,hT), E2=up(E,hT), S2=up(S,hT), W2=up(Wc,hT);
+  isoPoly(g,[Wc,S,E,up(E,6),up(S,6),up(Wc,6)]);
+  g.fillStyle='#8F887A'; g.fill();
+  g.fillStyle='rgba(20,16,10,.30)'; isoPoly(g,[Wc,S,E,up(E,1.6),up(S,1.6),up(Wc,1.6)]); g.fill();
+  isoPoly(g,[Wc,S,S2,W2]); g.fillStyle='#B7AF9C'; g.fill();
+  g.fillStyle='rgba(255,244,214,.15)'; g.fill();
+  g.strokeStyle='rgba(60,54,44,.30)'; g.lineWidth=1;       // coursed ashlar
+  for(let i=1;i<8;i++){
+    g.beginPath(); g.moveTo(Wc[0],Wc[1]-hT*i/8); g.lineTo(S[0],S[1]-hT*i/8); g.stroke();
+  }
+  g.fillStyle='rgba(226,216,190,.85)';                     // string course and cornice
+  isoPoly(g,[up(Wc,G.wallH),up(S,G.wallH),up(S,G.wallH+2.4),up(Wc,G.wallH+2.4)]); g.fill();
+  isoPoly(g,[up(Wc,hT-2.6),up(S,hT-2.6),S2,W2]); g.fill();
+  g.fillStyle='rgba(228,220,198,.8)';                      // quoins on the near corner
+  for(let i=0;i<6;i++) g.fillRect(S[0]-(i%2?4.5:3.5),S[1]-hT+2+i*(hT-4)/6,i%2?4.5:3.5,4.5);
+  // the arched door, with voussoirs and a lamp
+  const D=isoDoorAt(G);
+  g.fillStyle='#CEC5AE';
+  g.beginPath(); g.moveTo(D[0]-7,D[1]-2); g.lineTo(D[0]-7,D[1]-18);
+  g.arc(D[0],D[1]-18,7,Math.PI,0); g.lineTo(D[0]+7,D[1]-2); g.closePath(); g.fill();
+  g.fillStyle='#3E301F';
+  g.beginPath(); g.moveTo(D[0]-4.5,D[1]-2); g.lineTo(D[0]-4.5,D[1]-17);
+  g.arc(D[0],D[1]-17,4.5,Math.PI,0); g.lineTo(D[0]+4.5,D[1]-2); g.closePath(); g.fill();
+  g.strokeStyle='rgba(90,82,64,.6)'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(D[0]-7,D[1]-16); g.lineTo(D[0]-4.5,D[1]-14);
+  g.moveTo(D[0],D[1]-25); g.lineTo(D[0],D[1]-21.5);
+  g.moveTo(D[0]+7,D[1]-16); g.lineTo(D[0]+4.5,D[1]-14); g.stroke();
+  g.fillStyle='rgba(232,193,90,.25)'; g.beginPath(); g.arc(D[0]+10,D[1]-16,3.4,0,6.283); g.fill();
+  g.fillStyle='#E8C15A'; g.beginPath(); g.arc(D[0]+10,D[1]-16,1.6,0,6.283); g.fill();
+  for(const t of [0.3,0.68]){                              // tall glazed windows upstairs
+    const gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t-G.wallH;
+    g.fillStyle='#CEC5AE'; g.fillRect(gx-4.5,gy-G.upH*0.85,9,12.5);
+    g.fillStyle='#1E2836'; g.fillRect(gx-3.4,gy-G.upH*0.85+1,6.8,10.5);
+    g.fillStyle='rgba(168,196,214,.42)'; g.fillRect(gx-3.4,gy-G.upH*0.85+1,6.8,10.5);
+    g.strokeStyle='rgba(235,245,255,.55)'; g.lineWidth=1.1;
+    g.beginPath(); g.moveTo(gx-3,gy-G.upH*0.85+9.5); g.lineTo(gx+3,gy-G.upH*0.85+3); g.stroke();
+    g.fillStyle='rgba(226,216,190,.9)'; g.fillRect(gx-5,gy-G.upH*0.85+11.5,10,1.8);
+  }
+  isoPoly(g,[S,E,E2,S2]); g.fillStyle='#B7AF9C'; g.fill();
+  g.fillStyle='rgba(38,48,78,.32)'; g.fill();
+  g.strokeStyle='rgba(46,40,32,.30)'; g.lineWidth=1;
+  for(let i=1;i<8;i++){
+    g.beginPath(); g.moveTo(S[0],S[1]-hT*i/8); g.lineTo(E[0],E[1]-hT*i/8); g.stroke();
+  }
+  {
+    const gx=S[0]+(E[0]-S[0])*0.5, gy=S[1]+(E[1]-S[1])*0.5;
+    g.fillStyle='#1E2836'; g.fillRect(gx+2,gy-hT+7,7,10);
+    g.fillStyle='rgba(150,178,198,.35)'; g.fillRect(gx+2,gy-hT+7,7,10);
+    g.fillStyle='#241C12'; g.fillRect(gx+2,gy-22,7,8);
+    g.fillStyle='rgba(150,178,198,.28)'; g.fillRect(gx+2,gy-22,7,8);
+  }
+  g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
+  g.beginPath(); g.moveTo(S[0],S[1]); g.lineTo(S2[0],S2[1]); g.stroke();
+  const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
+  const RL=[rc[0]-G.bw*0.26+G.bh*0.10,rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10,rc[1]];
+  const roofC=roofOf(BLD.house.roof,set|0);
+  isoPoly(g,[W2,S2,RR,RL]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,244,210,.20)'; g.fill();
+  isoPoly(g,[S2,E2,RR]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(30,38,64,.34)'; g.fill();
+  isoPoly(g,[W2,RL,N2]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,250,224,.10)'; g.fill();
+  isoPoly(g,[N2,RL,RR,E2]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(24,30,52,.18)'; g.fill();
+  g.strokeStyle='rgba(26,20,14,.24)'; g.lineWidth=1;
+  for(let i=1;i<5;i++){
+    const t=i/5;
+    g.beginPath();
+    g.moveTo(W2[0]+(RL[0]-W2[0])*t,W2[1]+(RL[1]-W2[1])*t);
+    g.lineTo(S2[0]+(RR[0]-S2[0])*t,S2[1]+(RR[1]-S2[1])*t);
+    g.lineTo(E2[0]+(RR[0]-E2[0])*t,E2[1]+(RR[1]-E2[1])*t);
+    g.stroke();
+  }
+  {  // the dormer, on the lit slope
+    const mx=(W2[0]+S2[0]+RL[0]+RR[0])/4, my=(W2[1]+S2[1]+RL[1]+RR[1])/4;
+    g.fillStyle='#B7AF9C'; g.fillRect(mx-5,my-9,10,9);
+    g.fillStyle='rgba(255,244,214,.2)'; g.fillRect(mx-5,my-9,10,9);
+    g.fillStyle='#1E2836'; g.fillRect(mx-3,my-7.5,6,6);
+    g.fillStyle='rgba(168,196,214,.4)'; g.fillRect(mx-3,my-7.5,6,6);
+    g.fillStyle=roofC;
+    g.beginPath(); g.moveTo(mx-6.5,my-9); g.lineTo(mx,my-14.5); g.lineTo(mx+6.5,my-9); g.closePath(); g.fill();
+    g.fillStyle='rgba(255,250,224,.25)';
+    g.beginPath(); g.moveTo(mx-6.5,my-9); g.lineTo(mx,my-14.5); g.lineTo(mx+6.5,my-9); g.closePath(); g.fill();
+    g.strokeStyle='rgba(20,16,10,.4)'; g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(mx-6.5,my-9); g.lineTo(mx,my-14.5); g.lineTo(mx+6.5,my-9); g.stroke();
+  }
+  g.strokeStyle='rgba(20,16,10,.40)'; g.lineWidth=2.2;
+  g.beginPath(); g.moveTo(W2[0],W2[1]); g.lineTo(S2[0],S2[1]); g.lineTo(E2[0],E2[1]); g.stroke();
+  g.strokeStyle='rgba(255,246,214,.55)'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+  // the finial, in gilt
+  g.strokeStyle='#8A6E24'; g.lineWidth=1.2;
+  g.beginPath(); g.moveTo((RL[0]+RR[0])/2,(RL[1]+RR[1])/2);
+  g.lineTo((RL[0]+RR[0])/2,(RL[1]+RR[1])/2-3); g.stroke();
+  g.fillStyle='#E8C15A';
+  g.beginPath(); g.arc((RL[0]+RR[0])/2,(RL[1]+RR[1])/2-4.5,2,0,6.283); g.fill();
+  // the brick chimney
+  g.fillStyle='#8A5844'; g.fillRect(RR[0]-3.5,RR[1]-19,7,19);
+  g.fillStyle='rgba(255,255,255,.14)'; g.fillRect(RR[0]-3.5,RR[1]-19,2.4,19);
+  g.strokeStyle='rgba(40,22,16,.5)'; g.lineWidth=1;
+  for(let i=1;i<4;i++){
+    g.beginPath(); g.moveTo(RR[0]-3.5,RR[1]-19+i*4.8); g.lineTo(RR[0]+3.5,RR[1]-19+i*4.8); g.stroke();
+  }
+  g.fillStyle='#6E4436'; g.fillRect(RR[0]-4.5,RR[1]-21,9,2.8);
+  if(seasonNow===3){
+    g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
+    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+    g.fillStyle='rgba(242,247,251,.40)'; isoPoly(g,[W2,S2,RR,RL]); g.fill();
+    g.fillStyle='rgba(246,250,253,.9)'; g.fillRect(RR[0]-4.5,RR[1]-23,9,2);
+  }
+}
+
+// ---- the crown, as its own layer: cloth by the door, a pennant at the top.
+// Keyed by age as well as owner because each age's roof puts its high point
+// somewhere different, and a pennant has to fly from something.
+function isoHouseTint(owner,age){
+  const G=isoGeo('house'); age=age|0;
+  return sprite('IH:tint:o'+owner+':a'+age, G.W, G.H, g=>{
     g.translate(G.ax, G.ay);
-    const {S,Wc}=isoCorners(G);
     const col=teamColor(owner), lit=teamLight(owner);
-    const t=0.5, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
-    g.fillStyle=col;                                  // cloth hung beside the door
-    g.fillRect(gx-13, gy-18, 6, 12);
-    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(gx-13, gy-18, 2, 12);
-    // the pennant flies from the ridge's west end
-    const px2=(0+S[0])/2 - G.bw*0.26 + G.bh*0.10, py2=(0+S[1])/2 - G.wallH - G.roofH;
-    g.strokeStyle='#3A2E22'; g.lineWidth=1.6;
-    g.beginPath(); g.moveTo(px2,py2); g.lineTo(px2,py2-11); g.stroke();
-    g.fillStyle=lit;
-    g.beginPath(); g.moveTo(px2,py2-11);
-    g.quadraticCurveTo(px2+8,py2-9, px2+11,py2-7.5);
-    g.quadraticCurveTo(px2+7,py2-6, px2,py2-5); g.closePath(); g.fill();
+    const flag=(x2,y2)=>{
+      g.fillStyle=lit;
+      g.beginPath(); g.moveTo(x2,y2);
+      g.quadraticCurveTo(x2+8,y2+2, x2+11,y2+3.5);
+      g.quadraticCurveTo(x2+7,y2+5, x2,y2+6); g.closePath(); g.fill();
+    };
+    if(age<=0){
+      const {cx,cy,rx,ry,hutH,coneH}=hovelGeo(G);
+      const dx=cx-rx*0.5, dy=cy+ry*0.82;
+      g.fillStyle=col; g.fillRect(dx-11,dy-14,5,10);
+      g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(dx-11,dy-14,1.8,10);
+      const ay2=cy-hutH-coneH;
+      g.strokeStyle='#3A2E22'; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(cx,ay2+1); g.lineTo(cx,ay2-9); g.stroke();
+      flag(cx,ay2-9);
+    } else {
+      const D=isoDoorAt(G);
+      g.fillStyle=col; g.fillRect(D[0]-13,D[1]-18,6,12);
+      g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(D[0]-13,D[1]-18,2,12);
+      const mid=[(G.bw-G.bh)/2,(G.bw+G.bh)/4];
+      const k= age===2?1.09:1;
+      const top2= age===1? G.wallH-3+G.roofH
+               : age===2? G.wallH*0.9+G.upH+G.roofH
+               :          G.wallH+G.upH+G.roofH;
+      const px2=mid[0]-(G.bw*0.26-G.bh*0.10)*k, py2=mid[1]-top2;
+      g.strokeStyle='#3A2E22'; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(px2,py2); g.lineTo(px2,py2-11); g.stroke();
+      flag(px2,py2-11);
+    }
   }, {ox:G.ax, oy:G.ay});
 }
 
 // ---- construction, five authored stages on the one anchor ------------------
 // 0 cleared ground and footing  1 timber frame  2 partial walls + scaffold
 // 3 the roof going on           4 nearly complete
-function isoHouseStage(st){
+// Keyed by age as well, because the materials rising should be the materials
+// of the house that will stand there - and a round hovel is not framed square.
+function isoHouseStage(st,age){
+  age=age|0;
   const G=isoGeo('house');
-  return sprite('IH:stage:'+st, G.W, G.H, g=>{
+  return sprite('IH:stage:'+st+':a'+age, G.W, G.H, g=>{
     g.translate(G.ax, G.ay);
     const {N,E,S,Wc}=isoCorners(G), wallH=G.wallH, roofH=G.roofH;
     const up=(p,h)=>[p[0],p[1]-h];
@@ -9817,6 +10166,10 @@ function isoHouseStage(st){
     isoPoly(g,[N,E,S,Wc]); g.fillStyle='rgba(120,100,70,.42)'; g.fill();
     isoPoly(g,[Wc,S,E,up(E,4),up(S,4),up(Wc,4)]);
     g.fillStyle='#8A8272'; g.fill();
+    if(age<=0){ hovelStage(g,G,st); return; }
+    const wallC= age>=3?'#B5AD9A': age===2?'#C4BAA2':'#CDBE97';
+    const partC= age>=2?'rgba(158,150,134,.9)':'rgba(150,126,92,.85)';
+    const part2C=age>=2?'rgba(140,132,118,.9)':'rgba(132,110,80,.85)';
     if(st===0){                                       // footing, stakes, a spoil heap
       g.strokeStyle='rgba(90,70,46,.8)'; g.lineWidth=1.6;
       for(const c of [N,E,S,Wc]){ g.beginPath(); g.moveTo(c[0],c[1]-2); g.lineTo(c[0],c[1]-9); g.stroke(); }
@@ -9838,13 +10191,13 @@ function isoHouseStage(st){
       g.beginPath(); g.moveTo(Wc[0],Wc[1]-4); g.lineTo(S2[0],S2[1]+6); g.stroke();
       return;
     }
-    // partial walls: wattle panels reaching partway up the two visible faces
+    // partial walls reaching partway up the two visible faces
     const wh2= st===2 ? wallH*0.55 : wallH;
     isoPoly(g,[Wc,S,up(S,wh2),up(Wc,wh2)]);
-    g.fillStyle= st===2 ? 'rgba(150,126,92,.85)' : '#CDBE97'; g.fill();
+    g.fillStyle= st===2 ? partC : wallC; g.fill();
     if(st>=3){ g.fillStyle='rgba(255,244,214,.12)'; g.fill(); }
     isoPoly(g,[S,E,up(E,wh2),up(S,wh2)]);
-    g.fillStyle= st===2 ? 'rgba(132,110,80,.85)' : '#CDBE97'; g.fill();
+    g.fillStyle= st===2 ? part2C : wallC; g.fill();
     if(st>=3){ g.fillStyle='rgba(38,48,78,.25)'; g.fill(); }
     if(st===2){                                       // scaffold on the lit face
       g.strokeStyle='rgba(122,92,54,.9)'; g.lineWidth=1.6;
@@ -9858,9 +10211,9 @@ function isoHouseStage(st){
       g.stroke();
       return;
     }
-    // the roof going on: rafters across, thatch advancing from the west
+    // the roof going on: rafters across, boards advancing from the west
     const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
-    const RL=[rc[0]-G.bw*0.26+G.bh*0.10, rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10, rc[1]];
+    const RL=[rc[0]-G.bw*0.26+G.bh*0.10,rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10,rc[1]];
     g.strokeStyle='#5E4A2C'; g.lineWidth=2;
     g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
     for(let i=0;i<=4;i++){
@@ -9894,6 +10247,54 @@ function isoHouseStage(st){
       }
     }
   }, {ox:G.ax, oy:G.ay});
+}
+
+// A hovel is not framed square: it goes up as a stake ring, then bent poles
+// reaching for the apex, then the wattle ring rising, then thatch climbing
+// the poles from the west.
+function hovelStage(g,G,st){
+  const {cx,cy,rx,ry,hutH,coneH}=hovelGeo(G);
+  if(st===0){
+    g.strokeStyle='rgba(90,70,46,.8)'; g.lineWidth=1.6;
+    for(let i=0;i<6;i++){
+      const a2=i/6*6.283, sx=cx+rx*Math.cos(a2), sy=cy+ry*Math.sin(a2);
+      g.beginPath(); g.moveTo(sx,sy-1); g.lineTo(sx,sy-8); g.stroke();
+    }
+    g.fillStyle='rgba(110,92,64,.7)';
+    g.beginPath(); g.ellipse(cx+rx+8,cy+3,8,4,0,0,6.283); g.fill();
+    return;
+  }
+  const ay2=cy-hutH-coneH;
+  g.strokeStyle='#6B5233'; g.lineWidth=2.2; g.lineCap='round';
+  for(const a2 of [0.35,1.15,2.0,2.85,4.1,5.3]){
+    const sx=cx+rx*Math.cos(a2), sy=cy+ry*Math.sin(a2);
+    g.beginPath(); g.moveTo(sx,sy-1);
+    g.quadraticCurveTo((sx+cx)/2, cy-hutH-coneH*0.35, cx, ay2+2); g.stroke();
+  }
+  if(st===1) return;
+  const wh=st===2? hutH*0.55: hutH;
+  g.beginPath();
+  g.moveTo(cx-rx,cy-wh); g.lineTo(cx-rx,cy);
+  g.ellipse(cx,cy,rx,ry,0,Math.PI,0,true); g.lineTo(cx+rx,cy-wh); g.closePath();
+  g.fillStyle= st===2?'rgba(150,126,92,.85)':'#B4A177'; g.fill();
+  if(st===2) return;
+  const by=cy-hutH+2, brx=rx*1.3, bry=brx*0.5;
+  if(st===3){                                         // thatch over the west half
+    g.beginPath();
+    g.moveTo(cx,ay2); g.lineTo(cx-brx,by);
+    g.ellipse(cx,by,brx,bry,0,Math.PI,Math.PI/2,true);
+    g.closePath(); g.fillStyle='#83704A'; g.fill();
+    return;
+  }
+  g.beginPath();
+  g.moveTo(cx,ay2); g.lineTo(cx-brx,by);
+  g.ellipse(cx,by,brx,bry,0,Math.PI,0,true); g.closePath();
+  g.fillStyle='#83704A'; g.fill();
+  g.fillStyle='rgba(255,244,210,.14)'; g.fill();
+  // the last bundles waiting by the door
+  g.fillStyle='#96804E';
+  g.beginPath(); g.ellipse(cx-rx-7,cy+2,5,2.6,0.3,0,6.283); g.fill();
+  g.beginPath(); g.ellipse(cx-rx-3,cy+5,5,2.6,-0.2,0,6.283); g.fill();
 }
 
 // ---- damage, as overlays over whatever the main sprite is ------------------
@@ -10085,7 +10486,7 @@ function drawIsoBld(b){
   const S0=scr(b.tx*TILE, b.ty*TILE);
   if(b.building){
     const st=isoBuildStage(b);
-    const sp=isoHouseStage(st);
+    const sp=isoHouseStage(st,(sides[b.owner]&&sides[b.owner].age)|0);
     blit(sp, S0.x-sp.ox, S0.y-sp.oy);
     if(((b.id+((gameTime*4)|0))&3)===0&&puffs.length<240)
       puffs.push({x:b.x+(rnd()-0.5)*b.w*TILE*0.5, y:b.y, t:0.6, r:3+rnd()*3});
@@ -10095,9 +10496,10 @@ function drawIsoBld(b){
     barHp(b, S0.x-28, S0.y-sp.oy+6, 56);
     return;
   }
-  const main=isoHouseMain((sides[b.owner]&&sides[b.owner].age)|0, b.owner);
+  const bage=(sides[b.owner]&&sides[b.owner].age)|0;
+  const main=isoHouseMain(bage, b.owner);
   blit(main, S0.x-main.ox, S0.y-main.oy);
-  const tint=isoHouseTint(b.owner);
+  const tint=isoHouseTint(b.owner, bage);
   blit(tint, S0.x-tint.ox, S0.y-tint.oy);
   const ds=isoDmgState(b);
   if(ds>0){
