@@ -124,6 +124,18 @@ noise consonant per syllable, pitched to the breed, a mastiff at 170Hz and a
 terrier at 600 — on the birds' own rules: a long uneven interval, only when
 there is a dog on screen to have made the sound, and never over a fight.
 
+**The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
+what is already bright toward the sun corner and deepens what is already dark
+toward the cool one, which adds shape where a flat wash adds milk. The grade
+follows the year — spring soft, summer rich, autumn glowing amber, winter a sun
+with almost no warmth left in it — and crossfades over the last stretch of each
+season, which softens the palette snap at the boundary. And it follows the war:
+the vignette pulls in and goes cold with the fighting, so the same valley reads
+as a settlement in peace and a battlefield in the middle of one. Two full-screen
+fills a frame, exactly what the old static wash paid; gradients are cached and
+rebuilt only when the season blend or the battle heat crosses a step. It can be
+turned off in the menu, because a grade is an opinion.
+
 **Four crowns that look like four crowns.** Colour alone does not do it: at the
 distance this is played from, a blue roof and a purple roof are the same roof.
 Ironvale roofs in slate and frames in oak; the Crimson Host roofs in clay tile
@@ -346,7 +358,7 @@ npm test
 | `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger, the builder's toolkit — that facing survives a save, that tearing down releases the garrison and refunds only unbuilt work — and that each age re-dresses a house more than the last |
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
 | `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
-| `effects.test.js` | The volume sliders, the gathering rhythm and its debris, and what a blow does to a wall — chips, dust, a fading scar, and a ram that shakes the view |
+| `effects.test.js` | The volume sliders, the gathering rhythm and its debris, and what a blow does to a wall — chips, dust, a fading scar, and a ram that shakes the view, and the grade: that the far corner of the frame is cooler and deeper with it than without it, that it follows the year and tightens with the fighting, and that the menu switch is remembered |
 | `crown.test.js` | The tax: that the King's share is split the way it says, that a rate of nothing takes nothing, that prosperity climbs and never falls when the balance is spent, that discounts reach the till and not just the card, that public works come out of the reinvested share and not the purse, that the reserve can be opened, and that the whole account survives a save |
 | `harvest.test.js` | The year and the fields: that the seasons turn and re-dress the world without leaking sprites, that a field goes from broken ground to a harvest, that tending speeds it, that winter and worn-out soil both take their share, that fallow ground recovers, that granaries cap and food above the cap spoils, that everyone eats, that seed runs out, and that all of it survives a save |
 | `valley.test.js` | The four berries and that their yields really differ under a villager, that decorated ground still bakes fast, that birds fly and leave and are not entities, that a call carries over the bed, and that Natural Philosophy discovers its six compounds out of the work and remembers them through a save, and the dogs: that a settlement keeps them, that they wander and stay dry and cannot be selected, and that a bark is synthesised, routed to the ambience bus, and pitched to its breed |

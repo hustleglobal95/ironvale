@@ -717,6 +717,9 @@
       <label for="detail"><span>Detail</span><i id="detailVal">Balanced</i></label>
       <input type="range" id="detail" min="1" max="3" step="1" value="2">
       <div class="hint" id="detailHint">How many real pixels everything is drawn into. Sharp is three times the resolution and three times the memory for the ground.</div>
+      <label for="gradeBtn"><span>Colour grade</span><i id="gradeVal">On</i></label>
+      <button class="ghost" id="gradeBtn">Warm light, cool shade, and a frame that tightens in battle</button>
+      <div class="hint">Split-tones the picture and follows the seasons. Turn it off for a flatter, brighter image.</div>
     </div>
     <div class="rule"></div>
     <div class="row">
@@ -1316,7 +1319,7 @@ let mouse={x:0,y:0,down:false,dragging:false,sx:0,sy:0,inside:false};
 const keys=Object.create(null);
 let mmDrag=false, lastGroupTap={k:null,t:0}, lastPick={id:0,t:0}, lastKingCry=-99, lastBreakCry=-99, lastStallCry=-99;
 let aiming=false, patrolling=false, marks=[], lineDrag=null, hover=null;
-let puffs=[], sparks=[], fallen=[], spent=[], vignette=null, swell=null;
+let puffs=[], sparks=[], fallen=[], spent=[], swell=null;
 let battleHeat=0, visWater=0, shake=0;
 // ---- birds -------------------------------------------------------------
 // Two or three flocks at a time, crossing the view and gone. They are not
@@ -5945,6 +5948,84 @@ const LIGHT = {
   cool:'38,48,78',             // sky-lit shade
   deep:'18,22,36'              // contact, where almost no sky reaches
 };
+/* ---- the grade -------------------------------------------------------------
+   Colour grading, done the way a colourist would put it: split-tone the frame
+   so the light is warm and the shade is cool, let the grade follow the year,
+   and let the frame tighten when there is blood on the grass. What was here
+   before was one static wash at seven per cent, source-over - which TINTS: it
+   lays milk over the picture and takes contrast out. Soft-light is the
+   compositing arithmetic that grading actually wants: it brightens what is
+   already bright toward the warm and deepens what is already dark toward the
+   cool, which adds shape instead of fog.
+
+   The whole thing is two full-screen fills a frame - one soft-light gradient,
+   one source-over vignette - which is exactly what the old wash paid. Winter's
+   desaturation is not a third pass: it is encoded in the grade itself, a sun
+   with almost no warmth left in it. Gradients are cached and rebuilt only
+   when the season blend crosses one of sixteen steps, the resolution changes,
+   or a battle moves the vignette by a step; nothing allocates per frame.
+
+   The season boundary crossfades over its last stretch, so the grade eases
+   from amber into steel while the palettes snap - which softens the snap.
+   And it can be turned off in the menu, because a grade is an opinion. */
+const GRADE_SEASON=[
+  {warm:[255,224,168], wa:0.16, cool:[64,104,150],  ca:0.15, vin:0.24, vc:[12,10,6]},   // spring
+  {warm:[255,214,140], wa:0.19, cool:[46,84,136],   ca:0.17, vin:0.26, vc:[12,10,6]},   // summer
+  {warm:[255,188,110], wa:0.23, cool:[62,74,118],   ca:0.19, vin:0.30, vc:[14,10,5]},   // autumn
+  {warm:[214,222,232], wa:0.11, cool:[52,72,104],   ca:0.21, vin:0.28, vc:[8,10,16]}    // winter
+];
+let gradeOn=true;
+try{ gradeOn=localStorage.getItem(STORE+'grade')!=='0'; }catch(e){}
+let GR={w:0,h:0,key:'',lg:null,vg:null};
+function gradeMix(){
+  // Where the year stands, as a blend between this season's grade and the
+  // next's. The crossfade runs over the last third of each season.
+  const t=(gameTime%YEAR)/SEASON_LEN;
+  const i=Math.min(3,t|0), f=t-i;
+  const j=(i+1)%4, k=f<0.67?0:(f-0.67)/0.33;
+  return {i,j,k};
+}
+function drawGrade(W,H){
+  if(!gradeOn) return;
+  const m=gradeMix();
+  const heat=Math.min(1,battleHeat);
+  // sixteen steps of season blend, four of battle heat: rebuild rarely
+  const key=m.i+':'+((m.k*16)|0)+':'+((heat*4)|0);
+  if(GR.w!==W||GR.h!==H||GR.key!==key){
+    GR.w=W; GR.h=H; GR.key=key;
+    const A=GRADE_SEASON[m.i], B=GRADE_SEASON[m.j], k=m.k;
+    const L=(a,b)=>a+(b-a)*k;
+    const mix3=(a,b)=>[L(a[0],b[0])|0, L(a[1],b[1])|0, L(a[2],b[2])|0];
+    const warm=mix3(A.warm,B.warm), cool=mix3(A.cool,B.cool);
+    const wa=L(A.wa,B.wa), ca=L(A.ca,B.ca);
+    const lg=ctx.createLinearGradient(0,HUD_TOP,W,H-HUD_BOT);
+    lg.addColorStop(0,   'rgba('+warm[0]+','+warm[1]+','+warm[2]+','+wa.toFixed(3)+')');
+    lg.addColorStop(0.52,'rgba(128,128,128,0)');
+    lg.addColorStop(1,   'rgba('+cool[0]+','+cool[1]+','+cool[2]+','+ca.toFixed(3)+')');
+    GR.lg=lg;
+    // The vignette pulls in and goes cold with the fighting: the same frame,
+    // graded a settlement in peace and a battlefield in war.
+    const vin=L(A.vin,B.vin)+heat*0.14;
+    const vc=mix3(A.vc,B.vc), hc=[vc[0]*(1-heat*0.5)|0, vc[1], (vc[2]+heat*14)|0];
+    const vg=ctx.createRadialGradient(W/2,H*0.45,Math.min(W,H)*(0.40-heat*0.05),
+                                      W/2,H*0.45,Math.max(W,H)*0.80);
+    vg.addColorStop(0,'rgba(0,0,0,0)');
+    vg.addColorStop(1,'rgba('+hc[0]+','+hc[1]+','+hc[2]+','+vin.toFixed(3)+')');
+    GR.vg=vg;
+  }
+  ctx.save();
+  ctx.globalCompositeOperation='soft-light';
+  ctx.fillStyle=GR.lg;
+  ctx.fillRect(0,HUD_TOP,W,H-HUD_TOP-HUD_BOT);
+  ctx.restore();
+  ctx.fillStyle=GR.vg;
+  ctx.fillRect(0,HUD_TOP,W,H-HUD_TOP-HUD_BOT);
+}
+function setGrade(on){
+  gradeOn=!!on;
+  try{ localStorage.setItem(STORE+'grade', gradeOn?'1':'0'); }catch(e){}
+}
+
 // A lit face, a shaded face, and the dark line where two things touch.
 // Named at length because `lit` and `shade` are already taken by local
 // variables in the tree and window code, and a silent shadowing there cost an
@@ -7172,24 +7253,7 @@ function drawOverlay(W,H){
     ctx.strokeStyle='#D3A23C'; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,w,h);
   }
 
-  if(!vignette||vignette.w!==W||vignette.h!==H){
-    vignette={w:W,h:H,g:null,grade:null};
-    const g2=ctx.createRadialGradient(W/2,H*0.45,Math.min(W,H)*0.40,W/2,H*0.45,Math.max(W,H)*0.80);
-    g2.addColorStop(0,'rgba(0,0,0,0)'); g2.addColorStop(1,'rgba(12,10,6,.26)');
-    vignette.g=g2;
-    // A grade across the field: sun from the upper left, cool air in the far
-    // corner. It costs one gradient fill and ties every colour on screen into
-    // the same light.
-    const g3=ctx.createLinearGradient(0,HUD_TOP,W,H-HUD_BOT);
-    g3.addColorStop(0,   'rgba(255,212,146,.07)');
-    g3.addColorStop(0.50,'rgba(255,242,208,.02)');
-    g3.addColorStop(1,   'rgba(58,96,138,.07)');
-    vignette.grade=g3;
-  }
-  ctx.fillStyle=vignette.grade;
-  ctx.fillRect(0,HUD_TOP,W,H-HUD_TOP-HUD_BOT);
-  ctx.fillStyle=vignette.g;
-  ctx.fillRect(0,HUD_TOP,W,H-HUD_TOP-HUD_BOT);
+  drawGrade(W,H);
 
   {
     const fl=standardOf(PLAYER)||standardOf(ENEMY);
@@ -12477,6 +12541,16 @@ document.getElementById('kingBtn').onclick=findKing;
       document.getElementById('detailVal').textContent=RSCALE_NAME(RSCALE);
       log('Detail: '+RSCALE_NAME(RSCALE)+'.');
     });
+  }
+  const gb=document.getElementById('gradeBtn');
+  if(gb){
+    document.getElementById('gradeVal').textContent=gradeOn?'On':'Off';
+    gb.onclick=()=>{
+      setGrade(!gradeOn);
+      document.getElementById('gradeVal').textContent=gradeOn?'On':'Off';
+      log('Colour grade: '+(gradeOn?'on.':'off.'));
+      sfx('select');
+    };
   }
   fv.addEventListener('change', ()=>{ if(SFX.on) sfx('slash'); });
   av.addEventListener('input', ()=>{ SFX.init(); setMix('amb', +av.value); });
