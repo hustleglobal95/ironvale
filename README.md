@@ -55,6 +55,28 @@ standard and hold it for sixty seconds. Planting it is not a quiet act. They see
 it, they come off their raid clock, and everything they have turns toward the
 flag.
 
+**A wood, rather than a pattern of trees.** Foliage is most of what is on
+screen and it was the least developed thing in the picture. Three problems, all
+of them structural rather than detail. A canopy filled every lobe dark and then
+laid a lit cap over two-thirds of it, which left the dark as a thin rim and made
+a crown read as one flat bright green — the body is dark now, the sun catches
+only the outer upper-left edge, and the deepest tone sits where the lobes pile
+up away from the light. Conifers got the same three values. Scale varied by only
+half, so a wood tiled; the same eight variants now spread over two and a half
+times the range, and there are more lobes, thrown wider, so no two crowns share
+a silhouette. And the four tints in each season used to sit within about fifteen
+per cent of each other at one hue — they are four kinds of tree now, a deep cool
+one, an olive, a yellow-green and a blue-green, which is what gives autumn its
+range as much as summer.
+
+**Trees throw shadows, and a wood throws one shadow.** The canopy field that
+darkens a forest floor now makes two deposits per tree: the dim under the tree
+itself, and the shadow it actually casts, offset along the light. Overlapping
+trees merge into one mass rather than a field of separate blots, and because it
+all goes into the ground bake it costs nothing per frame — 320 trees on screen
+hold the same frame rate they did before any of it, the tree cache is unchanged
+at 128 sprites, and a chunk of shaded, decorated ground still bakes in 0.6ms.
+
 **The year turns.** Eight minutes to the year, two to the season. Spring is
 pale and full of blossom, summer is the valley at its best, autumn turns the
 broadleaves gold and drops leaves across the field, winter greys the grass,

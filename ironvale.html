@@ -5643,33 +5643,39 @@ const yearNo=()=>1+Math.floor(gameTime/YEAR);
 // The palettes are written out per season rather than derived by a hue shift:
 // autumn is not summer rotated, and a shift that gets the grass right turns the
 // conifers to rust.
+// The four tints in each row are meant to be four kinds of tree, not four
+// exposures of one. They used to sit within about fifteen per cent of each
+// other at one hue, which is why a wood read as a single colour however many
+// trees were in it: a deep cool one, an olive, a yellow-green and a blue-green
+// give a forest the variety a real one has without touching the palette the
+// ground and the buildings are keyed to.
 const SEASON=[
   {name:'Spring', short:'Spr',
    grass:['#3F601C','#557619','#6E8626','#7F8C3C','#9A9354'],
-   dark:['#40682C','#4C7434','#436A28','#59853A'],
-   lit:['#6E9C48','#7CAB52','#739F42','#8CBA58'],
+   dark:['#2E5426','#4C7434','#668E2C','#3A6047'],
+   lit:['#5A8C42','#7CAB52','#9CC257','#639A73'],
    detail:['rgba(120,152,70,.55)','rgba(180,192,116,.50)','rgba(96,126,60,.45)','rgba(202,194,136,.42)'],
    weather:'blossom', chill:0},
   {name:'Summer', short:'Sum',
    grass:['#3A5819','#4F6C18','#6C7E26','#7E8735','#98914E'],
-   dark:['#3A5E28','#456B2F','#3E6224','#527C36'],
-   lit:['#5E8C3C','#6C9B46','#639338','#7CAA4C'],
+   dark:['#28481F','#456B2F','#5E832A','#33543E'],
+   lit:['#4C7C34','#6C9B46','#93B848','#5A8C68'],
    detail:['rgba(108,138,64,.55)','rgba(168,180,108,.50)','rgba(88,116,56,.45)','rgba(196,186,128,.42)'],
    weather:null, chill:0},
   {name:'Autumn', short:'Aut',
    grass:['#455417','#697015','#8A7C18','#9A8A2C','#AC9748'],
-   dark:['#6E4A22','#7E5A26','#653F1E','#8A6A2E'],
-   lit:['#B0802E','#BE913A','#A2702A','#C89E46'],
+   dark:['#5A3418','#7E5A26','#8E6A1E','#6B2E1C'],
+   lit:['#9A6A26','#BE913A','#D2A83E','#B0512A'],
    detail:['rgba(150,132,62,.55)','rgba(190,168,96,.50)','rgba(122,98,50,.45)','rgba(202,178,116,.42)'],
    // A conifer does not turn. Handing autumn's gold to every tree on the map is
    // the single fastest way to make a forest look like a filter.
-   conifDark:['#35502A','#3E5C31','#385428','#476A38'],
-   conifLit:['#4E7638','#5A8241','#537C36','#688F48'],
+   conifDark:['#274420','#3E5C31','#4A6A2A','#2E4A38'],
+   conifLit:['#426C34','#5A8241','#6E8E3E','#4C7A62'],
    weather:'leaves', chill:0.25},
   {name:'Winter', short:'Win',
    grass:['#7B8981','#93A196','#AEB6AC','#BDC3B8','#B4A895'],
-   dark:['#3C4A34','#44503A','#3A4632','#4A5640'],
-   lit:['#5E6E54','#67775E','#5A6B52','#707F64'],
+   dark:['#2E3A2A','#44503A','#4E5638','#33413E'],
+   lit:['#4C5A46','#67775E','#78805C','#4E6262'],
    detail:['rgba(196,204,196,.50)','rgba(216,220,214,.45)','rgba(140,152,140,.40)','rgba(208,206,196,.42)'],
    weather:'snow', chill:1}
 ];
@@ -6169,6 +6175,12 @@ function buildCanopy(){
   canopyDirty=false;
   const n=MAP_W*MAP_H;
   if(!canopy||canopy.length!==n) canopy=new Uint8Array(n); else canopy.fill(0);
+  // Two deposits per tree. The first is the dim of a forest floor - symmetric,
+  // gentle, under the tree itself. The second is the shadow it actually throws,
+  // offset along the light and heavier, so a lone tree sits on the ground and a
+  // wood merges into one shared mass rather than a field of separate blots.
+  // Both go into the ground bake, so the whole thing costs nothing per frame.
+  const sx=Math.round(LIGHT.ox*1.4), sy=Math.round(LIGHT.oy*1.4);
   for(const e of ents){
     if(e.dead||e.kind!=='res'||e.type!=='tree') continue;
     const tx=(e.x/TILE)|0, ty=(e.y/TILE)|0;
@@ -6176,7 +6188,16 @@ function buildCanopy(){
       const y=ty+dy; if(y<0||y>=MAP_H) continue;
       for(let dx=-1;dx<=1;dx++){
         const x=tx+dx; if(x<0||x>=MAP_W) continue;
-        const w=(dx||dy)?((dx&&dy)?12:22):40;
+        const w=(dx||dy)?((dx&&dy)?4:8):15;
+        const i=y*MAP_W+x;
+        canopy[i]=Math.min(255, canopy[i]+w);
+      }
+    }
+    for(let dy=-1;dy<=1;dy++){
+      const y=ty+sy+dy; if(y<0||y>=MAP_H) continue;
+      for(let dx=-1;dx<=1;dx++){
+        const x=tx+sx+dx; if(x<0||x>=MAP_W) continue;
+        const w=(dx||dy)?((dx&&dy)?6:13):27;
         const i=y*MAP_W+x;
         canopy[i]=Math.min(255, canopy[i]+w);
       }
@@ -6392,7 +6413,10 @@ function groundChunk(cx,cy){
       const wx=cx*CH_T+i-1, wy=cy*CH_T+j-1;
       let a=0;
       if(wx>=0&&wy>=0&&wx<MAP_W&&wy<MAP_H && terrain[wy*MAP_W+wx]!==WATER)
-        a=Math.min(136, canopy[wy*MAP_W+wx]*0.70);
+        // Plateau early and low. A dense wood is shaded, not fogged: at the
+        // old strength every overlapping deposit saturated into one flat
+        // olive wash that took the ground texture with it.
+        a=Math.min(66, canopy[wy*MAP_W+wx]*0.46);
       if(a>2) any=true;
       const o=(j*P+i)*4;
       ci.data[o]=24; ci.data[o+1]=36; ci.data[o+2]=28; ci.data[o+3]=a;
@@ -6939,7 +6963,9 @@ function drawOverlay(W,H){
    or memory. The correct version is worth revisiting only if trees ever get
    split into a planted part and a moving one.                             */
 function treeSprite(v){
-  const sc=0.84+((v&7)/7)*0.44, tint=(v>>3)&3, kind=(v>>5)&3;
+  // A wood of trees all within half a size of each other reads as tiling.
+  // Same eight variants, spread over two and a half times the range.
+  const sc=0.62+((v&7)/7)*0.96, tint=(v>>3)&3, kind=(v>>5)&3;
   const w=Math.ceil(34*sc)+10, h=Math.ceil(40*sc)+12;
   return sprite('tree'+(v&7)+'_'+tint+'_'+kind+'_'+seasonNow, w, h, (g)=>{
     const cx=w/2, base=h-7;
@@ -6965,6 +6991,8 @@ function treeSprite(v){
     // lit cap on the upper left and a shaded underside.
     let sd=(v*2246822519)>>>0;
     const rf=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    const deepen=(c,k)=>{ const [r,gg,bb]=hexRGB(c);
+      return 'rgb('+(r*k|0)+','+(gg*k|0)+','+(bb*k|0)+')'; };
     const blobs=[];
     const conifer = kind<2;
     if(conifer){
@@ -6983,16 +7011,27 @@ function treeSprite(v){
           const jag=(i%2?0.80:1.0)*(0.86+rf()*0.28);
           pts.push([cx-half+half*2*u, yBot - (i%2?0:2.2*sc) + (1-jag)*3*sc]);
         }
+        // Three values here too. The tier goes down in the deepest tone, the
+        // body is inset off the light, and the sun catches a narrower flank
+        // than before - a conifer lit across half its width has no depth in it.
+        g.fillStyle=deepen(dark,0.58);
+        g.beginPath();
+        g.moveTo(cx, yTop);
+        for(const p of pts) g.lineTo(p[0],p[1]);
+        g.closePath(); g.fill();
+        g.save(); g.translate(-0.6*sc,-0.9*sc);
         g.fillStyle=dark;
         g.beginPath();
         g.moveTo(cx, yTop);
         for(const p of pts) g.lineTo(p[0],p[1]);
         g.closePath(); g.fill();
+        g.restore();
         g.fillStyle=lit;                               // sun on the left flank
         g.beginPath();
         g.moveTo(cx, yTop);
-        for(const p of pts) if(p[0]<=cx+half*0.10) g.lineTo(p[0],p[1]);
-        g.lineTo(cx, yBot-1.4*sc);
+        for(const p of pts) if(p[0]<=cx-half*0.30) g.lineTo(p[0],p[1]);
+        g.lineTo(cx-half*0.30, yBot-1.4*sc);
+        g.lineTo(cx, yBot-2.2*sc);
         g.closePath(); g.fill();
         g.strokeStyle='rgba(20,30,14,.20)'; g.lineWidth=1;
         g.beginPath(); g.moveTo(cx-half,yBot); g.lineTo(cx+half,yBot); g.stroke();
@@ -7022,28 +7061,40 @@ function treeSprite(v){
         }
         g.lineCap='butt';
       }
-      const n=bare?3:6;
+      // More lobes, spread wider and varying more in size, so the outline of a
+      // crown is ragged rather than round and no two trees share one.
+      const n=bare?4:8;
       for(let i=0;i<n;i++){
-        const a=rf()*6.283, d=rf()*7.5*sc;
+        const a=rf()*6.283, d=(2+rf()*9.5)*sc;
         blobs.push({
           x: cx+Math.cos(a)*d,
-          y: base-20*sc+Math.sin(a)*d*0.62,
-          r: (bare?3.4+rf()*2.4:7+rf()*4.6)*sc
+          y: base-20*sc+Math.sin(a)*d*0.60,
+          r: (bare?3.0+rf()*2.6:5.2+rf()*6.2)*sc
         });
       }
     }
-    for(const b of blobs){
+    // Three values, not two. The old canopy filled every lobe dark and then
+    // laid a lit cap over 68% of it, which left the dark as a thin rim and made
+    // the whole crown read as one flat bright green. The body is dark now, the
+    // sun only catches the outer upper-left edge, and the deepest tone sits
+    // where the lobes pile up away from the light.
+    const shade=deepen(dark,0.62);
+    for(const b of blobs){                       // the mass, in shadow
+      g.fillStyle=shade;
+      g.beginPath(); g.arc(b.x+b.r*0.10,b.y+b.r*0.12,b.r,0,6.283); g.fill();
+    }
+    for(const b of blobs){                       // the body of the leaf
       g.fillStyle=dark;
-      g.beginPath(); g.arc(b.x,b.y,b.r,0,6.283); g.fill();
+      g.beginPath(); g.arc(b.x-b.r*0.06,b.y-b.r*0.08,b.r*0.88,0,6.283); g.fill();
     }
-    for(const b of blobs){                       // sun from the upper left
+    for(const b of blobs){                       // and the sun on the outer edge
       g.fillStyle=lit;
-      g.beginPath(); g.arc(b.x-b.r*0.26,b.y-b.r*0.30,b.r*0.68,0,6.283); g.fill();
+      g.beginPath(); g.arc(b.x-b.r*0.34,b.y-b.r*0.36,b.r*0.50,0,6.283); g.fill();
     }
-    for(const b of blobs){                       // dappling on the crowns
+    for(const b of blobs){                       // a few leaves catching it
       if(b.r<4.4) continue;
-      g.fillStyle='rgba(238,248,186,.26)';
-      g.beginPath(); g.arc(b.x-b.r*0.36,b.y-b.r*0.42,b.r*0.30,0,6.283); g.fill();
+      g.fillStyle='rgba(240,250,190,.22)';
+      g.beginPath(); g.arc(b.x-b.r*0.46,b.y-b.r*0.50,b.r*0.22,0,6.283); g.fill();
     }
     // underside shadow ties the canopy to the trunk
     g.fillStyle='rgba(18,26,12,.26)';
