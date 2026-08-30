@@ -191,6 +191,20 @@ the house that will actually stand there. The pennant is keyed by age as well
 as owner, because each roof puts its high point somewhere different and a
 pennant has to fly from something.
 
+**The Dark Age house is drawn by a hand.** The first authored artwork in the
+game: a pre-rendered thatched cottage in four true facings, imported as the
+main-sprite layer of the building asset contract. The images travel inside the
+file as compressed WebP data URIs, so the game still runs from a bare `file://`
+with nothing next to it. Only the picture is the art: the ground shadow, the
+construction stages, the damage overlays and the crown's pennant stay
+procedural, layered under and over it by the same contract every drawn
+building follows — baked shadows were stripped at import so every state keeps
+the same sky. About Face now turns a building through all four facings in the
+isometric view (the classic renderer keeps its mirror), the facing rides in
+the save, and a village gets a mix of facings by default. Until the image
+decodes — a matter of milliseconds — the procedural hovel stands in, and the
+swap is a cache key, not a redraw.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
