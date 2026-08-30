@@ -171,6 +171,23 @@ reserve is for. The town center shows the whole account: the rate, what has been
 collected, what is reserved, what has been reinvested and what of it is unspent,
 and exactly what the next discount needs.
 
+**The standing of the crowns.** Press J and the first thing the Courts show you
+is where everybody stands. All four are ranked, always, with a bar for how far
+apart they are — that much a rider can carry back from a market or a burnt
+village. The figures themselves stay closed until you have actually found the
+crown they belong to, which is what keeps a scout worth sending. A fallen crown
+drops to the foot of the board rather than holding the place its last score
+earned it.
+
+Every crown now keeps its own books. It did not before: `scoreOf()` zeroed the
+gathered, killed and razed terms for anyone but you — not by design, but
+because nobody else had books to read — so an AI scored on units, buildings,
+age and techs alone and came out artificially low. One rule now applies to
+everybody, and the same work moves any crown's score by the same amount. Your
+own number is unchanged, and a save written before any of this seeds your
+tally back out of the stats it already carried, so loading an old game does
+not drop your score.
+
 **Four crowns, and a valley with its own politics.** Ironvale, the Crimson Host,
 Thornhollow and Saltmere all hold towns and all run themselves. They keep books
 on each other: what everyone has done to them, who is strong, who is close, and
@@ -274,7 +291,7 @@ npm test
 | `valley.test.js` | The four berries and that their yields really differ under a villager, that decorated ground still bakes fast, that birds fly and leave and are not entities, that a call carries over the bed, and that Natural Philosophy discovers its six compounds out of the work and remembers them through a save |
 | `paths.test.js` | Getting there: that a march arrives, that nobody stands still against a coastline, that a target in open water is refused rather than ground at, and that no unit ends with broken arithmetic |
 | `view.test.js` | The 3D view: that it builds, that a click lands on the pixel it was aimed at, that selecting, ordering and building all work through the camera, and that elevation never reaches the simulation |
-| `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, and that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed |
+| `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed — and, for the standing board: that the same work moves any crown's score by the same amount, that the running order is always shown while the figures stay closed until you have found the crown, that the marauders never count as a crown, and that an old save seeds your books back out of the stats it already carried |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 | `houses.test.js` | The four crowns' faces: that each roofs its whole settlement in one material and no two share it, that the roof in the picture is the roof on the table, that a knight of another house is built differently rather than tinted differently, that a roof carries snow in winter and not in summer, that only the two winter boundaries rebake a settlement, and that none of it is in the save |
 | `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
@@ -417,6 +434,16 @@ raider selects nothing — which read as the click failing. The diagnosis was
 right and the fix was in the wrong place: the suite cleared hostiles around
 where the probe had been and then moved the probe somewhere else. It clears
 around where the probe now is.
+
+The 3D picking assertion in `view.test.js` belonged on that list for a related
+reason and no longer does. It sampled whichever of your villagers happened to be
+on screen and skipped any with something within 26 pixels — but it built that
+exclusion list out of units and buildings only, so a tree standing on the same
+pixels took the click, which is the correct answer for that click and a failure
+for the test. It now places its own probes, chosen in screen space and taken
+back into the world so they are inside the view by construction, on ground it
+has checked is clear. The sample went from one-to-five figures to a steady five
+or six, and it stopped being a coin toss.
 
 What is left is environmental rather than the game's fault. Two assertions
 depend on how fast the machine runs rather than on what the game does, and

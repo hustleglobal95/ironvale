@@ -363,6 +363,24 @@
   .sbtn:hover:not(:disabled){background:rgba(211,162,60,.2)}
   .sbtn:disabled{opacity:.34; cursor:default}
   #relGrid{display:grid; grid-template-columns:1fr; gap:5px; margin:6px 0 4px}
+  .sbrow{
+    display:grid; grid-template-columns:22px 1fr 96px auto; gap:11px; align-items:center;
+    padding:7px 11px; background:rgba(0,0,0,.24); border:1px solid var(--chrome-3);
+    border-radius:2px; margin-bottom:5px;
+  }
+  .sbrow.you{background:rgba(211,162,60,.10); border-color:rgba(211,162,60,.34)}
+  .sbrow.out{opacity:.42}
+  .sbrow .pos{
+    font-family:"Cinzel",serif; font-size:13px; text-align:center; color:var(--ink-3);
+  }
+  .sbrow .h{font-family:"Barlow Condensed",sans-serif; font-size:15px; letter-spacing:.04em}
+  .sbrow .bar{height:7px; background:rgba(0,0,0,.42); border-radius:1px; overflow:hidden}
+  .sbrow .bar i{display:block; height:100%; border-radius:1px}
+  .sbrow .n{
+    font-family:"Cinzel",serif; font-size:12.5px; text-align:right;
+    min-width:56px; white-space:nowrap;
+  }
+  .sbrow .n.un{color:var(--ink-3); letter-spacing:.10em}
   .relrow{
     display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:center;
     padding:7px 11px; background:rgba(0,0,0,.24); border:1px solid var(--chrome-3); border-radius:2px;
@@ -596,6 +614,9 @@
     <h1>The Courts of the Valley</h1>
     <div class="rule"></div>
     <p>Four crowns share this ground and they all keep books on each other. Oaths are sworn and broken without your leave; what you see here is only what your riders have brought back.</p>
+    <h2>The standing of the crowns</h2>
+    <div id="scoreBoard"></div>
+    <p class="note" id="scoreNote"></p>
     <h2>Your borders</h2>
     <div id="myCourts"></div>
     <h2>Standing between the houses</h2>
@@ -1657,6 +1678,10 @@ function newSide(o){
                goldRate:1, phil:0, irrig:0, seedBack:1, store:0, keep:1},
           // what has been carried home since Natural Philosophy finished, and
           // what has been worked out from it
+          // Every crown keeps its own books. Before this only the player had
+          // them, which is why scoreOf() had to score everybody else on half
+          // the terms and why no scoreboard could have been honest.
+          tally:{gathered:0, killed:0, razed:0},
           learn:{f:0,w:0,g:0}, found:Object.create(null),
           seed:Math.round(60*PACE.crop), nextCrop:0, spoiled:0,
           taxRate:0.10, treasury:{f:0,w:0,g:0}, works:0, pool:0, taken:{f:0,w:0,g:0},
@@ -2025,7 +2050,7 @@ function newGame(diff){
           camps:0, raiders:0, tradesmen:0, flagBest:0, army:0};
   objDone=Object.create(null);
   groups=Object.create(null);
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
   hist=[]; histAt=0;
   aiReset(); envoy=null;
   seed=(Date.now()>>>0)^0x9E3779B9;
@@ -2276,6 +2301,7 @@ function deposit(u){
   const put=(tax-res)*WORTH[key];
   s.works+=put; s.pool=(s.pool||0)+put;
   s.taken[key]+=tax;
+  s.tally.gathered+=amt;
   if(u.owner===PLAYER){
     stats.gathered+=amt; stats.gath[key]+=amt;
     stats.taxed=(stats.taxed||0)+tax*WORTH[key];
@@ -2641,6 +2667,8 @@ function hit(src,t){
       for(const g of t.garr){ g.dead=true; if(t.owner===PLAYER) stats.lost++; }
       t.garr.length=0;
     }
+    const kb=sides[src.owner]&&sides[src.owner].tally;
+    if(kb){ if(t.kind==='unit') kb.killed++; else kb.razed++; }
     if(src.owner===PLAYER){ if(t.kind==='unit'){ stats.killed++; if(t.owner===MARAUDER) stats.raiders=(stats.raiders||0)+1; } else stats.razed++; }
     // whoever lost this writes it down, and it changes what they build next
     noteKill(src,t);
@@ -5407,7 +5435,7 @@ function frameBody(now){
       for(const k in groups) groups[k]=groups[k].filter(e=>!e.dead);
     }
     visAcc+=sdt;
-    if(visAcc>0.25){ visAcc=0; recomputeVision(); rebuildOcc(); V3.fogDirty=true; }
+    if(visAcc>0.25){ visAcc=0; recomputeVision(); rebuildOcc(); scoutCrowns(); V3.fogDirty=true; }
     acc+=sdt;
     if(acc>0.2){ acc=0; updateHUD(); updatePanel(); updateObjectives(false); renderCounsel(); checkLoss(); }
     if(gameTime>histAt){
@@ -5434,15 +5462,49 @@ function frameBody(now){
   if(now-lastMM>80){ lastMM=now; drawMinimap(); }   // the canvas keeps the last frame
 }
 
+// One rule for everybody. This used to zero the gathered, killed and razed
+// terms for anyone but the player - not by design, but because nobody else had
+// books to read - so every AI crown scored on units, buildings, age and techs
+// alone and came out artificially low. The player's number is unchanged: their
+// tally is fed at the same three places their stats are.
+// What your riders have actually found. Sticky: once you have seen a crown's
+// people or its ground you know it is out there, and fog closing over them
+// again does not unknow it. The scan only looks for crowns not yet met, so it
+// costs nothing once you have met them all - which is the usual case for most
+// of a game.
+let metCrown=[], scoutAt=0;
+function hasMet(o){ return o===PLAYER || !!metCrown[o]; }
+// Bounded, and it walks. On a map where you never meet anybody the naive
+// version rescanned every entity four times a second for the whole game, which
+// on a big map is thousands of visibility lookups a second to answer a question
+// that can afford to be a second late. This takes a slice per pass and carries
+// the cursor over, so the cost per beat is flat whatever the map holds.
+function scoutCrowns(){
+  let pending=0;
+  for(const o of AI_SIDES) if(!metCrown[o]&&aliveSide(o)) pending++;
+  if(!pending){ scoutAt=0; return; }
+  const n=ents.length;
+  if(!n) return;
+  const span=Math.min(n, 400);
+  for(let k=0;k<span;k++){
+    const e=ents[(scoutAt+k)%n];
+    // Crowns only. The marauders own entities too, and counting one as found
+    // spent a pending slot and stopped the scan before it reached a crown that
+    // was standing in plain sight.
+    if(!e||e.dead||e.owner===PLAYER||AI_SIDES.indexOf(e.owner)<0||metCrown[e.owner]) continue;
+    if(knows(e)){ metCrown[e.owner]=1; if(--pending<=0){ scoutAt=0; return; } }
+  }
+  scoutAt=(scoutAt+span)%n;
+}
+
 function scoreOf(o){
-  const s=sides[o], us=units(o);
-  const gathered = o===PLAYER ? stats.gathered : 0;
+  const s=sides[o], us=units(o), T=s.tally||{gathered:0,killed:0,razed:0};
   return Math.round(
-    (o===PLAYER?gathered/10:0) +
+    T.gathered/10 +
     (us.length+garrisonedOf(o))*4 +
     builds(o).filter(b=>!b.building).length*8 +
     s.age*120 + Object.keys(s.techs).length*30 +
-    (o===PLAYER?stats.killed*6+stats.razed*20:0));
+    T.killed*6 + T.razed*20);
 }
 function sampleHistory(){
   const row={t:Math.round(gameTime), s:[]};
@@ -10776,10 +10838,11 @@ function snapshot(){
       taxRate:s.taxRate, works:s.works||0, pool:s.pool||0, prosperSeen:s.prosperSeen||0,
       treasury:{f:s.treasury.f,w:s.treasury.w,g:s.treasury.g},
       taken:{f:s.taken.f,w:s.taken.w,g:s.taken.g}, projects:Object.keys(s.projects),
+      tally:{gathered:s.tally.gathered, killed:s.tally.killed, razed:s.tally.razed},
       mod:JSON.parse(JSON.stringify(s.mod))})),
     stats:JSON.parse(JSON.stringify(stats)),
     obj:Object.keys(objDone), ai:serAI(), rel:REL.map(r=>r.slice()), feed:DISPATCH.slice(-40),
-    cam:{x:cam.x,y:cam.y}, hist:hist,
+    cam:{x:cam.x,y:cam.y}, hist:hist, met:metCrown.slice(),
     groups:Object.keys(groups).reduce((m,k)=>(m[k]=groups[k].map(e=>e.id),m),{}),
     ents:ents.map(serEnt)
   };
@@ -10809,6 +10872,13 @@ function restore(snap){
     s.works=d.works||0; s.pool=d.pool||0; s.prosperSeen=d.prosperSeen||0;
     if(d.treasury) s.treasury={f:d.treasury.f||0,w:d.treasury.w||0,g:d.treasury.g||0};
     if(d.taken) s.taken={f:d.taken.f||0,w:d.taken.w||0,g:d.taken.g||0};
+    // A save written before the crowns kept books has no tally. For the player
+    // the numbers are not lost - they are in `stats` - so seed from there, or
+    // opening an old save would visibly drop your own score. The other crowns
+    // start from nothing because nothing was ever recorded for them.
+    if(d.tally) s.tally={gathered:d.tally.gathered||0, killed:d.tally.killed||0, razed:d.tally.razed||0};
+    else if(i===PLAYER&&snap.stats) s.tally={gathered:snap.stats.gathered||0,
+      killed:snap.stats.killed||0, razed:snap.stats.razed||0};
     s.projects=Object.create(null);
     for(const k of (d.projects||[])) s.projects[k]=1;
     s.nextCrop=d.nextCrop||0; s.spoiled=d.spoiled||0; s.hungry=d.hungry?1:0;
@@ -10822,8 +10892,11 @@ function restore(snap){
   stats=snap.stats;
   objDone=Object.create(null); for(const k of snap.obj) objDone[k]=true;
   desAI(snap); cam={x:snap.cam.x,y:snap.cam.y};
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
   hist=snap.hist||[]; histAt=gameTime+8;
+  // A save from before the board existed has met nobody; the first vision pass
+  // after it opens fills that in from what is actually on screen.
+  metCrown=(snap.met||[]).slice();
   autosaveAt=gameTime+45;
 
   const byId=Object.create(null);
@@ -11037,6 +11110,40 @@ function closeAll(){
 }
 
 /* --------------------------- the courts sheet ---------------------------- */
+// The standing of the crowns. You always see the running order and roughly how
+// far apart they are - that much a rider can carry back from a market or a
+// burnt village. The figures themselves stay closed until you have actually
+// found the crown they belong to, which is what keeps a scout worth sending.
+function renderScoreboard(){
+  const host=document.getElementById('scoreBoard');
+  if(!host) return;
+  const rows=SETTLEMENTS.map(o=>({o, sc:scoreOf(o), out:!aliveSide(o)}));
+  const top=Math.max(1, ...rows.filter(r=>!r.out).map(r=>r.sc));
+  // A fallen crown keeps whatever it had, but it is out of the running, so it
+  // sits at the foot of the board rather than wherever its last score put it.
+  rows.sort((a,b)=> (a.out-b.out) || (b.sc-a.sc));
+  let h='', pos=0;
+  for(const r of rows){
+    pos++;
+    const you=r.o===PLAYER, seen=hasMet(r.o);
+    const w=Math.max(2, Math.min(100, Math.round(r.sc/top*100)));
+    h+='<div class="sbrow'+(you?' you':'')+(r.out?' out':'')+'">'
+      +'<span class="pos">'+(r.out?'&mdash;':pos)+'</span>'
+      +'<span class="h" style="color:'+teamLight(r.o)+'">'+esc(houseName(r.o))+(you?' &middot; you':'')+'</span>'
+      +'<span class="bar"><i style="width:'+w+'%;background:'+teamLight(r.o)+'"></i></span>'
+      +'<span class="n'+(seen?'':' un')+'">'
+        +(r.out ? 'fallen' : seen ? fmt(r.sc) : '&mdash;')+'</span>'
+      +'</div>';
+  }
+  host.innerHTML=h;
+  const unknown=SETTLEMENTS.filter(o=>aliveSide(o)&&!hasMet(o)).length;
+  document.getElementById('scoreNote').textContent = unknown
+    ? 'The order is what the riders can tell you. '+unknown+' of these '+
+      (unknown===1?'crowns has':'crowns have')+' not been found yet, and until '+
+      (unknown===1?'it is':'they are')+' their books stay closed.'
+    : 'Every crown has been found, so the whole board is open to you.';
+}
+
 function openCourts(){
   // Your own borders first, with what you can say at each of them, then what
   // the other crowns have settled between themselves.
@@ -11062,6 +11169,7 @@ function openCourts(){
       +'<button class="sbtn" data-o="'+o+'" data-k="gift"'+(playerCanSend(o,'gift')?'':' disabled')+'>Send a gift<i>80 G</i></button>'
       +'</div></div>';
   }
+  renderScoreboard();
   mine.innerHTML=mh||'<div class="dsp"><span class="dt"></span><span class="dx">There is nobody left to write to.</span></div>';
   mine.querySelectorAll('.sbtn').forEach(btn=>{
     btn.onclick=()=>{ playerSend(+btn.dataset.o, btn.dataset.k); openCourts(); };
@@ -11967,7 +12075,7 @@ document.getElementById('chronCount').textContent='0 / '+OBJECTIVES.length;
 ents=[]; nextId=1; sides=HOUSE.map((h,i)=>newSide(i));
 stats={gathered:0,gath:{f:0,w:0,g:0},trained:0,soldiers:0,killed:0,razed:0,techs:0,trades:0,lost:0,fish:0,guard:0};
 objDone=Object.create(null); groups=Object.create(null);
-shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
+shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; metCrown=[]; hist=[]; histAt=1e9; lastAlert=-99; autosaveAt=1e9; gameTime=0; sel=[];
 running=false; paused=false; ended=false;
 aiReset();
 setMapSize(mapSize); genMap();
