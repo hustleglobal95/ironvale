@@ -158,6 +158,143 @@ const { chromium, wrap, boot } = require('./harness');
   });
   ok('off means off: classic picking is the identity again', !off.on && off.ident);
 
+  // ================= the master house: the building asset contract ==========
+  // One entity in simulation; its appearance resolved by architecture set,
+  // age, construction state, damage state and owner tint - through layers
+  // that all share one canvas and one anchor, so no state change can ever
+  // move the building.
+  await page.evaluate(() => window.__IV.isoToggle(true));
+
+  // ---- every state shares the canvas and the anchor ------------------------
+  const contract = await page.evaluate(() => {
+    const g = window.__IV, sizes = [];
+    for (const a of [0, 1, 2, 3]) for (const set of [0, 1, 3, 4]) sizes.push(g.hMain(a, set));
+    for (let st = 0; st < 5; st++) sizes.push(g.hStage(st));
+    for (let d2 = 1; d2 <= 3; d2++) sizes.push(g.hDmg(d2));
+    for (const o of [0, 1, 3, 4]) sizes.push(g.hTint(o));
+    const w0 = sizes[0].w, h0 = sizes[0].h, ox0 = sizes[0].ox, oy0 = sizes[0].oy;
+    return { n: sizes.length,
+             same: sizes.every(sp => sp.w === w0 && sp.h === h0 && sp.ox === ox0 && sp.oy === oy0) };
+  });
+  ok('all ' + contract.n + ' state sprites share one canvas and one anchor', contract.same);
+
+  // ---- construction is driven by progress, in five authored stages ---------
+  const build = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e5;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const h = g.mk(0, 'house', tc.tx + 9, tc.ty + 9, false);
+    const stages = [];
+    for (const pgs of [0.05, 0.2, 0.5, 0.75, 0.95]) {
+      h.prog = h.buildTime * pgs;
+      stages.push(g.hBuildStage(h));
+    }
+    // pausing changes nothing; resuming picks up the same stage
+    h.prog = h.buildTime * 0.5;
+    const before = g.hBuildStage(h);
+    await new Promise(r => setTimeout(r, 300));
+    const after = g.hBuildStage(h);
+    h.prog = h.buildTime; h.building = false; h.hp = h.maxHp;
+    return { stages, held: before === after && before === 2 };
+  });
+  ok('progress walks the five authored stages (' + build.stages.join(',') + ')',
+     build.stages.join(',') === '0,1,2,3,4');
+  ok('a paused construction holds its stage', build.held);
+
+  // ---- damage responds to health, and repair undoes it ---------------------
+  const dmg = await page.evaluate(() => {
+    const g = window.__IV;
+    const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+    const at = f => { h.hp = h.maxHp * f; return g.hDmgState(h); };
+    const states = [at(1), at(0.55), at(0.25), at(0.08)];
+    const repaired = at(0.95);
+    return { states, repaired };
+  });
+  ok('health walks the damage states (' + dmg.states.join(',') + ')',
+     dmg.states.join(',') === '0,1,2,3');
+  ok('and repair walks them back (' + dmg.repaired + ')', dmg.repaired === 0);
+
+  // ---- the crown is a layer, not a bake ------------------------------------
+  const tint = await page.evaluate(() => {
+    const g = window.__IV;
+    const sameMain = g.hMain(1, 0) === g.hMain(1, 0);
+    const t0 = g.px(g.hTint(0)), t1 = g.px(g.hTint(1));
+    let diff = 0;
+    for (let i = 0; i < t0.length; i += 4)
+      if (t0[i + 3] > 60 && Math.abs(t0[i] - t1[i]) + Math.abs(t0[i + 2] - t1[i + 2]) > 40) diff++;
+    return { sameMain, diff };
+  });
+  ok('one main sprite serves a whole architecture set', tint.sameMain);
+  ok('and the crown arrives as its own tint layer (' + tint.diff + ' px differ)', tint.diff > 20);
+
+  // ---- the age changes the picture, never the entity -----------------------
+  const age = await page.evaluate(() => {
+    const g = window.__IV, s = g.sides()[0];
+    const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+    const before = { id: h.id, tx: h.tx, ty: h.ty, hpf: h.hp / h.maxHp };
+    const p1 = g.px(g.hMain(1, 0));
+    s.age = 3;
+    const p3 = g.px(g.hMain(3, 0));
+    s.age = 1;
+    let diff = 0;
+    for (let i = 0; i < p1.length; i += 4)
+      if (Math.abs(p1[i] - p3[i]) + Math.abs(p1[i + 1] - p3[i + 1]) + Math.abs(p1[i + 2] - p3[i + 2]) > 40) diff++;
+    return { same: h.id === before.id && h.tx === before.tx && Math.abs(h.hp / h.maxHp - before.hpf) < 1e-9, diff };
+  });
+  ok('advancing the age re-dresses the house without touching the entity (' +
+     age.diff + ' px change)', age.same && age.diff > 60);
+
+  // ---- selection follows the footprint, not the roof -----------------------
+  const selTest = await page.evaluate(() => {
+    const g = window.__IV;
+    const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+    const centre = g.scr((h.tx + h.w / 2) * 28, (h.ty + h.h / 2) * 28);
+    const roof = { x: centre.x, y: centre.y - 74 };        // in the picture, above the footprint
+    const pickC = g.pickH(centre.x, centre.y);
+    const pickR = g.pickH(roof.x, roof.y);
+    return { onFoot: pickC && pickC.k === 'bld' && pickC.id === h.id,
+             offRoof: !(pickR && pickR.k === 'bld' && pickR.id === h.id) };
+  });
+  ok('clicking the footprint selects the house', selTest.onFoot);
+  ok('clicking the roof overhang does not - the footprint is the truth', selTest.offRoof);
+
+  // ---- roof overhangs do not block movement --------------------------------
+  const walk = await page.evaluate(async () => {
+    const g = window.__IV;
+    const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+    const u = g.spawn(0, 'vil', (h.tx - 2) * 28, (h.ty + h.h + 1) * 28 + 14);
+    u.task = 'move'; u.tx = (h.tx + h.w + 2) * 28; u.ty = (h.ty + h.h + 1) * 28 + 14;
+    await new Promise(r => setTimeout(r, 3600));
+    const off = Math.hypot(u.x - u.tx, u.y - u.ty);
+    u.dead = true;
+    return off;
+  });
+  ok('a villager walks under the roofline past the house (' + Math.round(walk) + 'px off)', walk < 40);
+
+  // ---- thirty houses together, sorted and playable -------------------------
+  const town = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    let n = 0;
+    for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 6; gx++) {
+      const h = g.mk(0, 'house', tc.tx - 10 + gx * 3, tc.ty + 4 + gy * 3, true);
+      if (h) n++;
+    }
+    const p = g.isoP(tc.x, (tc.ty + 10) * 28);
+    g.cam().x = p.x - innerWidth / 2; g.cam().y = p.y - innerHeight / 2;
+    const fps = await new Promise(res => {
+      let f = 0; const t0 = performance.now();
+      const t = () => { f++; if (performance.now() - t0 < 2000) requestAnimationFrame(t);
+                        else res(Math.round(f / ((performance.now() - t0) / 1000))); };
+      requestAnimationFrame(t);
+    });
+    return { n, fps };
+  });
+  ok(town.n + ' houses stand together and the frame holds (' + town.fps + ' fps)',
+     town.n >= 28 && town.fps > 20);
+  await page.evaluate(() => window.__IV.isoToggle(false));
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 4).join('\n') : 'none');
   await b.close();
 })();
