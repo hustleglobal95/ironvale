@@ -2022,7 +2022,8 @@ function makeBuilding(o,type,tx,ty,done){
     maxHp:mx, hp: done?mx:Math.max(1,Math.round(mx*0.08)),
     building:!done, prog:done?d.build:0, buildTime:d.build,
     queue:[], qt:0, cd:0, r:Math.max(d.w,d.h)*TILE*0.5,
-    amount:0, max:Math.round((d.farm||0)*sides[o].mod.farmYield), rally:null, seen:false, garr:[]};
+    amount:0, max:Math.round((d.farm||0)*sides[o].mod.farmYield), rally:null, seen:false, garr:[],
+    flip:false};
   if(done) musterPoint(e);
   if(type==='plot'){
     // Broken ground, not a standing crop. It is sown the moment the farmer who
@@ -2228,6 +2229,31 @@ function orderPatrol(u,x,y){
 function orderHold(u){ u.task='hold'; u.target=null; u.resT=null; u.am=null; halt(u); }
 function garrisonCap(b){ return BLD[b.type].garr||0; }
 function orderGarrison(u,b){ u.task='enter'; u.target=b; u.resT=null; u.am=null; }
+// Tearing down your own building is a decision, not a disaster, so it goes
+// through a different door than dying: whoever is sheltering inside steps out
+// unhurt first, a half-built frame refunds most of its timber - the materials
+// are still stacked on site - and a finished building refunds nothing, because
+// the work is the cost. The wreck effect is the same one a razing leaves;
+// checkLoss picks up the consequences on its own clock, so pulling down your
+// last town center means exactly what it sounds like.
+function demolish(b){
+  if(!b||b.dead||b.kind!=='bld'||b.owner!==PLAYER) return false;
+  if(b.garr&&b.garr.length) ungarrison(b);
+  if(b.building){
+    const c=bldCost(PLAYER,b.type), s=sides[PLAYER];
+    s.f+=Math.round(c.f*0.7); s.w+=Math.round(c.w*0.7); s.g+=Math.round(c.g*0.7);
+    log(BLD[b.type].name+' abandoned — most of the materials come back.');
+  } else {
+    log(BLD[b.type].name+' torn down.');
+  }
+  b.dead=true;
+  if(!b.building&&wrecks.length<40) bldWreck(b);
+  touchLists();
+  sel=sel.filter(e=>e!==b);
+  sfx('crash');
+  updateHUD(); updatePanel();
+  return true;
+}
 function ungarrison(b){
   const out=b.garr.splice(0,b.garr.length);
   for(const u of out){
@@ -3500,6 +3526,67 @@ const SFX={
     if(this.birdAt<=0){
       this.birdAt = 9+Math.random()*26;
       if(env.birds&&env.battle<0.12&&Math.random()<0.62) this.birdCall();
+    }
+
+    // The dogs, on the same discipline as the birds: a long uneven interval,
+    // only when there is a dog on screen to have made the sound, and never
+    // over a fight - a dog barking through a battle is a film mistake.
+    if(this.dogAt===undefined) this.dogAt=6+Math.random()*10;
+    this.dogAt-=dt;
+    if(this.dogAt<=0){
+      this.dogAt = 11+Math.random()*24;
+      if(env.dog&&env.battle<0.12&&Math.random()<0.55) this.bark(env.dog.breed);
+    }
+  },
+  // A bark is a pitched burst, not a note: a sawtooth that falls fast through
+  // a low-pass, with a hard attack and a faster release, said once or twice.
+  // The breed is in the register and the manner - a mastiff speaks low and
+  // once, a terrier high and three times, a lurcher hardly at all, and the
+  // collie's is the ordinary middle of it. No samples; nothing in this game is.
+  bark(breed){
+    if(!this.ctx||!this.amb) return;
+    const ctx=this.ctx, t0=ctx.currentTime;
+    const P=[
+      {f0:170, drop:0.52, dur:0.15, n:1+((Math.random()*2)|0), gap:0.30, vol:0.16, lp:520},
+      {f0:330, drop:0.58, dur:0.10, n:2,                       gap:0.18, vol:0.13, lp:1250},
+      {f0:280, drop:0.62, dur:0.24, n:1,                       gap:0.30, vol:0.11, lp:760},
+      {f0:600, drop:0.68, dur:0.06, n:2+((Math.random()*2)|0), gap:0.12, vol:0.13, lp:2400}
+    ][breed]||{f0:330,drop:0.58,dur:0.10,n:2,gap:0.18,vol:0.13,lp:900};
+    let t=t0+Math.random()*0.05;
+    for(let i=0;i<P.n;i++){
+      const f0=P.f0*(1+(Math.random()-0.5)*0.12);
+      const o=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
+      o.type='sawtooth'; o2.type='square';
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0*P.drop, t+P.dur);
+      o2.frequency.setValueAtTime(f0*1.98, t);                 // the edge on the voice
+      o2.frequency.exponentialRampToValueAtTime(f0*1.98*P.drop, t+P.dur);
+      const g2=ctx.createGain(); g2.gain.value=0.22;
+      const lp=ctx.createBiquadFilter();
+      lp.type='lowpass'; lp.frequency.value=P.lp; lp.Q.value=1.1;
+      const vol=P.vol*(0.8+Math.random()*0.4);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t+0.014);
+      g.gain.exponentialRampToValueAtTime(vol*0.5, t+P.dur*0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+P.dur);
+      o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g); g.connect(this.amb);
+      o.start(t); o.stop(t+P.dur+0.03);
+      o2.start(t); o2.stop(t+P.dur+0.03);
+      // The consonant. A real bark opens on a broadband snap - the "b" before
+      // the vowel - and without it the voice is all hum. A short burst of
+      // noise, bright and gone in twenty milliseconds.
+      const ns=ctx.createBufferSource();
+      ns.buffer=this.whiteBuf(); ns.loop=true;
+      const nf=ctx.createBiquadFilter();
+      nf.type='bandpass'; nf.Q.value=0.8;
+      nf.frequency.value=Math.min(3400, P.f0*3.2+800);
+      const ng=ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(vol*1.5, t+0.006);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t+0.040);
+      ns.connect(nf); nf.connect(ng); ng.connect(this.amb);
+      ns.start(t); ns.stop(t+0.05);
+      t+=P.dur+P.gap*(0.7+Math.random()*0.6);
     }
   },
   // Two calls, both built the same way: a short tone whose pitch is a contour
@@ -5453,10 +5540,10 @@ function frameBody(now){
   }
   // The bed runs whenever the game is on screen, paused or not - silence on
   // pause is jarring, and a menu over a living valley is not.
-  if(running){ tickSeason(); updateFlocks(dt); updateWeather(dt); }
+  if(running){ tickSeason(); updateFlocks(dt); updateDogs(dt); updateWeather(dt); }
   if(running&&SFX.ctx)
     SFX.ambience(dt, {water:visWater, battle:Math.min(1,battleHeat),
-                      birds:flocksVisible()?1:0});
+                      birds:flocksVisible()?1:0, dog:dogsVisible()});
   if(V3.on) v3Draw();
   draw();
   if(now-lastMM>80){ lastMM=now; drawMinimap(); }   // the canvas keeps the last frame
@@ -6543,6 +6630,192 @@ function drawFlocks(){
 }
 // Is a flock actually in front of the player? A call from a bird nobody can see
 // is just a noise.
+/* ---- dogs ------------------------------------------------------------------
+   A settlement keeps dogs. They are decoration in exactly the way the birds
+   are weather: not entities, so nothing can select them, order them, hurt them
+   or path around them, and they are not in the save - a town simply has its
+   dogs again when it loads. Four breeds, told apart the way the berries are:
+   by silhouette and colour at a glance. A mastiff is a heavy block with a
+   broad head, a collie carries a pricked ear and a white collar, a lurcher is
+   all leg and tucked waist, a terrier is a scrap with its stub tail up. They
+   live around the player's buildings, trot from door to door, sit a while,
+   and now and then one barks - synthesised like every other sound in the
+   game, pitched to the breed. */
+const DOG_BREED=[
+  {name:'mastiff', coat:'#A87848', dk:'#7A5430', chest:null,      leg:9,  body:13, head:5.0, ear:'fold',  tail:'low',  speed:42},
+  {name:'collie',  coat:'#3A342C', dk:'#26221C', chest:'#E8E2D2', leg:10, body:12, head:4.2, ear:'prick', tail:'plume',speed:58},
+  {name:'lurcher', coat:'#9A938B', dk:'#6E6862', chest:null,      leg:12, body:12, head:3.6, ear:'fold',  tail:'thin', speed:70},
+  {name:'terrier', coat:'#A06A38', dk:'#744A24', chest:'#E0D6BE', leg:6,  body:8,  head:3.4, ear:'prick', tail:'stub', speed:52}
+];
+const dogs=[];
+function spawnDogs(){
+  dogs.length=0;
+  const tc=builds(PLAYER,'tc')[0];
+  if(!tc) return;
+  const order=[0,1,2,3].sort(()=>rnd()-0.5).slice(0,3);
+  for(const br of order)
+    dogs.push({breed:br, x:tc.x+(rnd()-0.5)*120, y:tc.y+60+(rnd()-0.5)*60,
+               tx:0, ty:0, state:'idle', t:1+rnd()*4, dir:rnd()<0.5?-1:1, phase:rnd()*6.283});
+}
+function updateDogs(dt){
+  if(!dogs.length){
+    if(builds(PLAYER,'tc').length) spawnDogs();
+    return;
+  }
+  for(const d of dogs){
+    d.t-=dt;
+    if(d.state==='go'){
+      const dx=d.tx-d.x, dy=d.ty-d.y, dd=Math.hypot(dx,dy);
+      if(dd<8||d.t<=0){ d.state=rnd()<0.35?'sit':'idle'; d.t=2+rnd()*6; continue; }
+      const sp=DOG_BREED[d.breed].speed;
+      const nx=d.x+dx/dd*sp*dt, ny=d.y+dy/dd*sp*dt;
+      // a dog does not walk into a lake; it also does not solve mazes - if the
+      // straight line is wet it simply loses interest
+      const t2=terrain[((ny/TILE)|0)*MAP_W+((nx/TILE)|0)];
+      if(t2===WATER||t2===undefined){ d.state='idle'; d.t=1+rnd()*3; continue; }
+      d.x=nx; d.y=ny; d.dir=dx<0?-1:1; d.phase+=dt*9;
+    } else if(d.t<=0){
+      // pick somewhere near home: the doorstep of a random building, or a
+      // villager to follow for the look of it
+      const bs=builds(PLAYER).filter(b=>!b.building&&b.type!=='plot');
+      const vs=units(PLAYER).filter(isVil);
+      let gx,gy;
+      if(bs.length&&(rnd()<0.7||!vs.length)){
+        const b=bs[(rnd()*bs.length)|0];
+        gx=b.x+(rnd()-0.5)*b.w*TILE*1.6; gy=b.y+b.h*TILE*0.5+8+rnd()*26;
+      } else if(vs.length){
+        const u=vs[(rnd()*vs.length)|0];
+        gx=u.x+(rnd()-0.5)*40; gy=u.y+10+(rnd()-0.5)*20;
+      } else { gx=d.x+(rnd()-0.5)*160; gy=d.y+(rnd()-0.5)*120; }
+      const dd=Math.hypot(gx-d.x,gy-d.y);
+      if(dd>700){ gx=d.x+(gx-d.x)/dd*300; gy=d.y+(gy-d.y)/dd*300; }
+      d.tx=gx; d.ty=gy; d.state='go'; d.t=3+dd/DOG_BREED[d.breed].speed;
+    }
+  }
+}
+// Baked per breed, pose and facing - tiny sprites, so the whole kennel costs a
+// few kilobytes. Poses: 0 standing, 1/2 the trot, 3 sitting.
+function dogSprite(breed,pose,dir){
+  const B=DOG_BREED[breed];
+  // Knee-height to a villager, which is what a dog is. The first draft of these
+  // was half a cow.
+  const sc=0.72;
+  const w=34*sc+8, h=26*sc+6;
+  return sprite('dog'+breed+'p'+pose+(dir<0?'L':'R'), w, h, g=>{
+    g.save();
+    if(dir<0){ g.translate(w,0); g.scale(-1,1); }
+    g.translate(w*0.46, h-2);
+    g.scale(sc,sc);
+    const sit=pose===3, bl=B.body, lg=B.leg, hd=B.head;
+    const sw=pose===1?1:pose===2?-1:0;              // the trot swaps the pairs
+    const backY=-lg-bl*0.30;                        // the line of the back
+    const deep=B.name==='mastiff'?0.62:B.name==='lurcher'?0.34:0.46;
+    g.lineCap='round'; g.lineJoin='round';
+    /* far legs first, in the dark coat */
+    g.strokeStyle=B.dk; g.lineWidth=2.0;
+    if(!sit){
+      // rear far: hip -> hock -> foot, the joint is what makes it a leg
+      g.beginPath();
+      g.moveTo(-bl*0.38+sw*1.2, backY+bl*deep*0.5);
+      g.lineTo(-bl*0.46-sw*1.0, -lg*0.42);
+      g.lineTo(-bl*0.36-sw*2.2, 0); g.stroke();
+      // front far: straight down from the chest
+      g.beginPath();
+      g.moveTo(bl*0.30-sw*1.2, backY+bl*deep*0.5);
+      g.lineTo(bl*0.34+sw*2.0, 0); g.stroke();
+    }
+    /* body: chest deep at the front, tucked at the loin */
+    g.fillStyle=B.coat;
+    g.beginPath();
+    if(sit){
+      // haunches down, chest up, head high
+      g.moveTo(-bl*0.42, 0);
+      g.quadraticCurveTo(-bl*0.60, -bl*0.55, -bl*0.20, backY-bl*0.10);
+      g.quadraticCurveTo(bl*0.14, backY-bl*0.30, bl*0.34, backY-bl*0.22);
+      g.lineTo(bl*0.44, -lg*0.2);
+      g.quadraticCurveTo(bl*0.20, 0, -bl*0.42, 0);
+    } else {
+      g.moveTo(-bl*0.50, backY+bl*0.10);                       // rump
+      g.quadraticCurveTo(-bl*0.20, backY-bl*0.14, bl*0.16, backY-bl*0.06);
+      g.lineTo(bl*0.42, backY);                                // withers to chest
+      g.quadraticCurveTo(bl*0.54, backY+bl*deep*0.6, bl*0.36, backY+bl*deep);
+      g.quadraticCurveTo(0, backY+bl*(B.name==='lurcher'?deep*0.5:deep*0.9),
+                         -bl*0.34, backY+bl*deep*0.62);        // the tuck
+      g.quadraticCurveTo(-bl*0.52, backY+bl*0.40, -bl*0.50, backY+bl*0.10);
+    }
+    g.closePath(); g.fill();
+    /* near legs over the body */
+    g.strokeStyle=B.coat; g.lineWidth=2.2;
+    if(sit){
+      g.beginPath(); g.moveTo(bl*0.30, backY+bl*0.30); g.lineTo(bl*0.36, 0); g.stroke();
+      g.fillStyle=B.coat;
+      g.beginPath(); g.ellipse(-bl*0.28, -lg*0.30, bl*0.26, bl*0.30, 0.2, 0, 6.283); g.fill();
+    } else {
+      g.beginPath();
+      g.moveTo(-bl*0.30-sw*1.2, backY+bl*deep*0.55);
+      g.lineTo(-bl*0.38+sw*1.0, -lg*0.42);
+      g.lineTo(-bl*0.28+sw*2.2, 0); g.stroke();
+      g.beginPath();
+      g.moveTo(bl*0.34+sw*1.2, backY+bl*deep*0.55);
+      g.lineTo(bl*0.38-sw*2.0, 0); g.stroke();
+    }
+    /* neck and head, up and forward of the chest */
+    const nx=bl*0.42, ny=backY+(sit?-bl*0.24:0);
+    const hx=nx+hd*0.9, hy=ny-hd*(sit?1.1:0.9);
+    g.strokeStyle=B.coat; g.lineWidth=Math.max(2.4, hd*1.1);
+    g.beginPath(); g.moveTo(nx, ny+2); g.lineTo(hx-hd*0.2, hy+hd*0.3); g.stroke();
+    g.fillStyle=B.coat;
+    g.beginPath(); g.arc(hx, hy, hd, 0, 6.283); g.fill();
+    g.fillStyle=B.name==='mastiff'?B.dk:B.coat;                 // the muzzle
+    g.beginPath();
+    g.ellipse(hx+hd*(B.name==='lurcher'?1.15:0.85), hy+hd*0.28,
+              hd*(B.name==='lurcher'?0.95:0.62), hd*0.40, 0.12, 0, 6.283);
+    g.fill();
+    g.fillStyle='#241A10';                                      // nose
+    g.beginPath();
+    g.arc(hx+hd*(B.name==='lurcher'?2.0:1.5), hy+hd*0.22, 1.0, 0, 6.283); g.fill();
+    g.fillStyle='#16100A';                                      // eye
+    g.beginPath(); g.arc(hx+hd*0.3, hy-hd*0.2, 0.7, 0, 6.283); g.fill();
+    if(B.chest){                                                // collar or bib
+      g.fillStyle=B.chest;
+      g.beginPath(); g.ellipse(nx+hd*0.1, ny+hd*0.6, hd*0.55, hd*0.8, -0.5, 0, 6.283); g.fill();
+    }
+    g.fillStyle=B.dk;                                           // ears
+    if(B.ear==='prick'){
+      g.beginPath(); g.moveTo(hx-hd*0.55, hy-hd*0.35); g.lineTo(hx-hd*0.40, hy-hd*1.55); g.lineTo(hx+hd*0.05, hy-hd*0.65); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(hx-hd*0.05, hy-hd*0.5); g.lineTo(hx+hd*0.15, hy-hd*1.35); g.lineTo(hx+hd*0.45, hy-hd*0.55); g.closePath(); g.fill();
+    } else {
+      g.beginPath(); g.ellipse(hx-hd*0.30, hy-hd*0.25, hd*0.40, hd*0.65, 0.45, 0, 6.283); g.fill();
+    }
+    /* the tail is half the silhouette */
+    g.strokeStyle=B.coat;
+    g.lineWidth=B.tail==='plume'?2.8:B.tail==='stub'?2.4:1.7;
+    g.beginPath();
+    const tx0=-bl*0.48, ty0=backY+bl*0.14;
+    if(B.tail==='stub'){ g.moveTo(tx0, ty0); g.lineTo(tx0-2.2, ty0-5.5); }
+    else if(B.tail==='plume'){ g.moveTo(tx0, ty0); g.quadraticCurveTo(tx0-7, ty0-9, tx0-2.5, ty0-13); }
+    else if(B.tail==='thin'){ g.moveTo(tx0, ty0+2); g.quadraticCurveTo(tx0-8, ty0+8, tx0-5, ty0+13); }
+    else { g.moveTo(tx0, ty0+2); g.quadraticCurveTo(tx0-7, ty0+6, tx0-5.5, ty0+12); }
+    g.stroke();
+    g.restore();
+  });
+}
+function drawDog(d){
+  const x=d.x-cam.x, y=d.y-cam.y;
+  const pose = d.state==='sit' ? 3 : d.state==='go' ? 1+(((d.phase|0)%2+2)%2) : 0;
+  const sp=dogSprite(d.breed,pose,d.dir);
+  contactShadow(ctx, x, y+1, 5.5, 2.1, 0.22);
+  const bob=d.state==='go'?Math.sin(d.phase)*0.8:0;
+  blit(sp, x-sp.w*0.42, y+bob-sp.h+2);
+}
+function dogsVisible(){
+  for(const d of dogs){
+    const sx=d.x-cam.x, sy=d.y-cam.y;
+    if(sx>-40&&sx<innerWidth+40&&sy>-40&&sy<innerHeight+40) return d;
+  }
+  return null;
+}
+
 function flocksVisible(){
   for(const f of flocks){
     const sx=f.x-cam.x, sy=f.y-cam.y;
@@ -6698,6 +6971,14 @@ function draw(){
     else if(!knows(e)) continue;
     vsb.push(e);
   }
+  // The dogs sort in with everything else that stands on the ground, so one
+  // can trot behind a house and in front of a fence like anything else alive.
+  for(const d of dogs){
+    const sx=d.x-cam.x, sy=d.y-cam.y;
+    if(sx<-40||sy<-40||sx>W+40||sy>H+40) continue;
+    if(visAt(d.x,d.y)!==2) continue;
+    d.kind='dog'; vsb.push(d);
+  }
   for(const q of spent){                     // arrows that missed
     const x=q.x-cam.x, y=q.y-cam.y;
     if(x<-20||y<-20||x>W+20||y>H+20) continue;
@@ -6713,6 +6994,7 @@ function draw(){
   drawFallen();
   vsb.sort((a,b)=>(a.y+(a.kind==='bld'?a.h*TILE/2:0))-(b.y+(b.kind==='bld'?b.h*TILE/2:0)));
   for(const e of vsb){
+    if(e.kind==='dog'){ drawDog(e); continue; }
     if(e.kind==='res') drawRes(e);
     else if(e.kind==='bld') drawBld(e);
     else drawUnit(e);
@@ -7259,7 +7541,13 @@ function bldPad(type){
 // is enough to break that, and costs one more cached canvas per type.
 function bldSprite(type,owner,tier,vr){
   const d=BLD[type], w=d.w*TILE, h=d.h*TILE, p=bldPad(type), v=(vr|0)&1;
-  return sprite('B'+type+owner+tier+'v'+v, w+p.l+p.r, h+p.t+p.b,
+  // The age is in the key, so a town rebakes itself the moment its crown
+  // advances - and a Dark Age hovel and an Imperial hall are different sprites
+  // rather than one sprite pretending. Old-age entries linger in the cache
+  // until the winter purge collects them, which is cheaper than purging four
+  // owners' worth of buildings on every advance.
+  const age=(sides[owner]&&sides[owner].age)|0;
+  return sprite('B'+type+owner+tier+'v'+v+'a'+age, w+p.l+p.r, h+p.t+p.b,
     g=>bldBody(g,type,owner,tier,p.l,p.t,w,h,v), {ox:p.l, oy:p.t});
 }
 function bldApex(type,py,w){
@@ -8432,8 +8720,105 @@ function bldBody(g,type,owner,tier,px,py,w,h,v){
   // A field carries its crop and its stage in `tier`, not a damage state, and
   // there is no such thing as a burning furrow. Everything else takes its
   // scorches and its cracks as before.
+  if(!isFarm) bldAgeDress(g,type,owner,px,py,w,h);
   if(!isFarm) bldDamage(g,type,px,py,w,h,tier);
   if(type==='farm') steadingYard(g,px,py,w,h);
+}
+
+/* ---- what an age looks like -----------------------------------------------
+   The last thing the original brief asked for and the one thing the town never
+   showed: you could reach the Imperial Age and stand in a settlement identical
+   to the one you started in. Four ages, four states of the same walls.
+   Dark is making do: patched plaster, weather stains, a wall that has never
+   been pointed. Feudal is the baseline the buildings were drawn at. Castle
+   brings the masons - a dressed stone footing up the lower wall, quoins at the
+   corners, iron on the doors. Imperial finishes it: quoins the full height,
+   glass in the windows, a carved line under the eaves. All baked; the age is
+   in the sprite key. */
+function bldAgeDress(g,type,owner,px,py,w,h){
+  const F=formOf(type);
+  if(F.open||type==='plot'||type==='standard'||type==='palisade'||type==='stonewall'||type==='gate') return;
+  const age=(sides[owner]&&sides[owner].age)|0;
+  if(age===1) return;                                  // the drawn baseline
+  const wallTop=py+12, fy=py+h-11;
+  let sd=((type.charCodeAt(0)*31+owner)*2654435761)>>>0;
+  const R=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+  if(age===0){
+    // Patch repairs in plaster that never matched, and rain-streaks off the
+    // eaves. A settlement that has just raised its first roofs looks like it.
+    for(let i=0;i<4;i++){
+      const pw2=7+R()*12, ph2=6+R()*9;
+      const x2=px+4+R()*(w-10-pw2), y2=wallTop+3+R()*((fy-wallTop)-6-ph2);
+      g.fillStyle='rgba(88,74,52,.'+(26+(R()*12|0))+')';
+      g.fillRect(x2,y2,pw2,ph2);
+      g.strokeStyle='rgba(36,28,18,.40)'; g.lineWidth=0.9;
+      g.strokeRect(x2+0.5,y2+0.5,pw2-1,ph2-1);
+    }
+    // one panel where the plaster has gone altogether and the wattle shows
+    {
+      const pw2=8+R()*8, ph2=8+R()*7;
+      const x2=px+5+R()*(w-12-pw2), y2=wallTop+4+R()*((fy-wallTop)-8-ph2);
+      g.fillStyle='rgba(74,58,38,.85)'; g.fillRect(x2,y2,pw2,ph2);
+      g.strokeStyle='rgba(140,116,80,.55)'; g.lineWidth=0.9;
+      for(let ly=y2+2; ly<y2+ph2-1; ly+=2.6){
+        g.beginPath(); g.moveTo(x2+1,ly); g.lineTo(x2+pw2-1,ly); g.stroke();
+      }
+    }
+    g.fillStyle='rgba(52,44,32,.26)';
+    for(let i=0;i<4;i++){
+      const x2=px+6+R()*(w-12);
+      g.fillRect(x2, wallTop, 2+R()*2, (fy-wallTop)*(0.3+R()*0.5));
+    }
+    return;
+  }
+  const stoneUp = age>=3 ? (fy-wallTop) : (fy-wallTop)*0.34;
+  // quoins: dressed blocks up the corners, alternating long and short
+  const qh=5;
+  for(let y2=fy-qh; y2>fy-stoneUp; y2-=qh){
+    const long=(((fy-y2)/qh)|0)%2===0, qw=long?9:6;
+    for(const x2 of [px+2, px+w-2-qw]){
+      g.fillStyle='rgba(44,38,28,.55)';                 // the keyline first
+      g.fillRect(x2-0.8, y2-0.8, qw+1.6, qh+0.6);
+      g.fillStyle='#B6AC94';                            // then the dressed block
+      g.fillRect(x2, y2, qw, qh-0.8);
+      g.fillStyle='rgba(255,250,232,.30)';
+      g.fillRect(x2, y2, qw, 1.2);
+    }
+  }
+  if(!F.stone){          // the masons' footing stays; Imperial builds on it
+    // the footing band the masons put under a timber frame
+    const bh2=(fy-wallTop)*0.30;
+    g.fillStyle='#8E8878';
+    g.fillRect(px+2, fy-bh2, w-4, bh2);
+    g.fillStyle='rgba(40,44,52,.14)';                   // stone is cooler than lime
+    g.fillRect(px+2, fy-bh2, w-4, bh2);
+    g.strokeStyle='rgba(48,42,32,.50)'; g.lineWidth=HAIR();
+    for(let y2=fy-6; y2>fy-bh2; y2-=6){
+      g.beginPath(); g.moveTo(px+2,y2+0.5); g.lineTo(px+w-2,y2+0.5); g.stroke();
+      for(let x2=px+6+((((fy-y2)/6)|0)%2?7:0); x2<px+w-6; x2+=14){
+        g.beginPath(); g.moveTo(x2+0.5,y2+0.5); g.lineTo(x2+0.5,Math.min(fy,y2+6)+0.5); g.stroke();
+      }
+    }
+    g.fillStyle='#A89E86'; g.fillRect(px+1, fy-bh2-1.6, w-2, 2.4);
+    g.fillStyle='rgba(255,250,232,.35)'; g.fillRect(px+1, fy-bh2-1.6, w-2, 1);
+    g.fillStyle='rgba(24,20,14,.30)'; g.fillRect(px+2, fy-bh2+0.8, w-4, 1.2);
+  }
+  if(age>=3){
+    // glass. The opening stays an opening - the glint is one pale diagonal,
+    // which at this size is the whole difference between a hole and a pane.
+    for(const [wx,wy,ww,wh] of bldWindows(type,px,py,w,h)){
+      g.save(); g.beginPath(); g.rect(wx,wy,ww,wh); g.clip();
+      g.fillStyle='rgba(168,196,214,.30)'; g.fillRect(wx,wy,ww,wh);
+      g.strokeStyle='rgba(235,245,255,.55)'; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(wx-1,wy+wh*0.8); g.lineTo(wx+ww*0.7,wy-1); g.stroke();
+      g.restore();
+    }
+    // and a carved line under the eaves, picked out by the light
+    g.strokeStyle='rgba(240,228,190,.34)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(px+3,wallTop+2.5); g.lineTo(px+w-3,wallTop+2.5); g.stroke();
+    g.strokeStyle='rgba(30,24,16,.30)';
+    g.beginPath(); g.moveTo(px+3,wallTop+4); g.lineTo(px+w-3,wallTop+4); g.stroke();
+  }
 }
 
 /* --------------------------- the steading ---------------------------------
@@ -8915,6 +9300,13 @@ function drawBld(b){
   // badly it is hurt, so the live damage effects below have to read the real
   // tier — a field at stage three is not a building on fire.
   const tier=bldTier(b);
+  // Facing. The art is painted from one side, so "turned round" is a mirror
+  // about the building's own centre - door, porch, chimney and awning all swap
+  // sides together because the whole coordinate frame flips, the baked sprite
+  // and the live overlays alike. Health bars and lettering draw after the
+  // restore, so nothing that has to be read is ever reversed.
+  const flip=!!b.flip && b.type!=='standard';
+  if(flip){ ctx.save(); ctx.translate(px*2+w,0); ctx.scale(-1,1); }
   const sp=bldSprite(b.type,b.owner, b.type==='plot' ? farmVariant(b) : tier, b.id>>1);
   blit(sp, px-sp.ox, py-sp.oy);
 
@@ -9024,7 +9416,8 @@ function drawBld(b){
   if(!tier && !b.building && !ghost && CHIMNEY[b.type] && puffs.length<210 &&
      ((b.id*7+((gameTime*1.6)|0))%23)===0){
     const v=(b.id>>1)&1;
-    const cx2=px+w*(v?1-CHIMNEY[b.type]:CHIMNEY[b.type]);
+    let cx2=px+w*(v?1-CHIMNEY[b.type]:CHIMNEY[b.type]);
+    if(flip) cx2=px*2+w-cx2;              // the smoke follows the chimney round
     const ap2=bldApex(b.type,py,w);
     const roofY=py+13+(ap2-(py+13))*(1-Math.abs(cx2-(px+w/2))/(w/2+3));
     puffs.push({x:cx2+cam.x+(rnd()-0.5)*3, y:roofY+cam.y-15,
@@ -9098,6 +9491,7 @@ function drawBld(b){
       ctx.beginPath(); ctx.arc(px+w/2, top, 4.4, 0, 6.283); ctx.stroke();
     }
   }
+  if(flip) ctx.restore();
   if(b.flash>0){ ctx.fillStyle='rgba(255,90,60,'+Math.min(.6,b.flash*2.2)+')'; ctx.fillRect(px,py,w,h); }
   if(sel.includes(b)){ ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2; ctx.strokeRect(px-3,py-3,w+6,h+6); }
   barHp(b,px,py,w);
@@ -10546,6 +10940,23 @@ function buildingCards(b){
         enabled: s.g>=buyPrice(PLAYER,k), run:()=>{ if(!doBuy(PLAYER,k)) sfx('error'); }});
     });
   }
+
+  // The builder's toolkit. Last on the card row so nothing above it changes
+  // its hotkey when these appear.
+  const isWallB=b.type==='palisade'||b.type==='stonewall'||b.type==='gate';
+  if(b.type!=='plot'&&b.type!=='standard'&&!isWallB){
+    card({name:'About Face', kind:'age', cost:{f:0,w:0,g:0}, costHtml:'<i>free</i>',
+      tip:'Turn the building to face the other way. The door, porch, chimney and yard swap sides. Cosmetic — nothing about how it works changes.',
+      enabled:true,
+      run:()=>{ b.flip=!b.flip; sfx('select'); }});
+  }
+  if(b.type!=='plot'){
+    card({name:'Tear It Down', kind:'age', cost:{f:0,w:0,g:0},
+      costHtml:'<i>no refund · Delete</i>',
+      tip:'Pull the building down. Anyone sheltering inside steps out first. A finished building refunds nothing; cancelling one still under construction (select it and press Delete) returns 70% of its cost.',
+      enabled:true,
+      run:()=>{ demolish(b); }});
+  }
 }
 
 function bearerCards(bs){
@@ -10865,7 +11276,7 @@ function serEnt(e){
                               +(e.skill||1).toFixed(3), e.planter||0];
     o.q=e.queue.slice(); o.qt=e.qt; o.am=e.amount; o.mx=e.max;
     o.rl=e.rally?[e.rally.x,e.rally.y,e.rally.res||0]:null; o.sn=e.seen?1:0; o.cd=e.cd;
-    o.rp=e.rep?1:0;
+    o.rp=e.rep?1:0; if(e.flip) o.fp=1;
     o.gr=(e.garr||[]).map(serEnt);
   } else if(e.kind==='res'){
     o.bx=e.tx; o.by=e.ty; o.am=e.amount; o.mx=e.max; o.wb=e.wob;
@@ -10962,6 +11373,7 @@ function restore(snap){
       e.tx=o.bx; e.ty=o.by; e.w=d.w; e.h=d.h; e.building=!!o.b; e.prog=o.pg; e.buildTime=d.build;
       e.queue=o.q||[]; e.qt=o.qt; e.amount=o.am; e.max=o.mx;
       e.rally=o.rl?{x:o.rl[0],y:o.rl[1],res:o.rl[2]||0}:null; e.seen=!!o.sn; e.cd=o.cd; e._gr=o.gr||[];
+      e.flip=!!o.fp;
       e.rep=o.rp?1:0;   // absent in an older save, which simply means off
       e.r=Math.max(d.w,d.h)*TILE*0.5;
       if(o.t==='plot'){
@@ -11953,6 +12365,12 @@ addEventListener('keydown',e=>{
       }
       lastGroupTap={k,t:now};
     }
+    return;
+  }
+  if(k==='delete'||k==='backspace'){
+    e.preventDefault();
+    const bs=sel.filter(x=>x.kind==='bld'&&x.owner===PLAYER&&!x.dead);
+    if(bs.length){ for(const x of bs) demolish(x); }
     return;
   }
   const hi=HOTKEYS.indexOf(k.toUpperCase());

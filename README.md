@@ -85,6 +85,45 @@ a filter over the top: the ground palette, every tree and — at the two winter
 boundaries and no others — every building are rebaked, and the conifers stay
 green while everything around them turns, because they would.
 
+**Four ages on the walls.** The last item of the original visual brief and the
+one thing the town never showed: you could reach the Imperial Age standing in a
+settlement identical to the one you started in. A Dark Age building is making
+do — patched plaster that never matched, rain-streaks off the eaves, a panel
+where the plaster has gone and the wattle shows. Feudal is the clean baseline
+the buildings were drawn at. The Castle Age brings the masons: a dressed stone
+footing up the lower wall with a proud string course along the top of it, and
+quoins at the corners. Imperial finishes what they started — the quoins run the
+full height, the windows take glass (one pale diagonal in each opening, which at
+this size is the whole difference between a hole and a pane), and a carved line
+runs under the eaves. The age is in the sprite key, so the whole settlement
+re-dresses itself the moment the crown advances, and old-age sprites linger in
+the cache until the winter purge collects them rather than costing a purge of
+their own.
+
+**Buildings can face the other way, and come down on purpose.** Every building
+is painted from one side, so "turned round" is a mirror about its own centre —
+door, porch, chimney, awning and yard swap sides together, the baked sprite and
+the live overlays alike, and the hearth smoke follows the chimney round. Health
+bars and lettering draw outside the mirror, so nothing that has to be read is
+ever reversed. It is on the card row of any selected building, it is cosmetic,
+and it survives a save. Beside it: Tear It Down, also on the Delete key.
+Whoever is sheltering inside steps out unhurt first; a building still under
+construction refunds 70% of its cost, because the materials are still stacked
+on site; a finished one refunds nothing, because the work is the cost. It comes
+down with the same collapse a razing gets.
+
+**A settlement keeps dogs.** Three of them, from four breeds told apart the way
+the berries are — by silhouette at a glance. A mastiff is a heavy block with a
+deep chest, a collie carries pricked ears, a white bib and a plume tail, a
+lurcher is all leg and tucked waist, a terrier is a scrap with its stub tail
+up. They are decoration with the birds' discipline: not entities, so nothing
+can select, order, hurt or path around one; not in the save — a town simply has
+its dogs again when it loads; and they stay off the water. Now and then one
+barks. It is synthesised like every other sound in the game — two voices and a
+noise consonant per syllable, pitched to the breed, a mastiff at 170Hz and a
+terrier at 600 — on the birds' own rules: a long uneven interval, only when
+there is a dog on screen to have made the sound, and never over a fight.
+
 **Four crowns that look like four crowns.** Colour alone does not do it: at the
 distance this is played from, a blue roof and a purple roof are the same roof.
 Ironvale roofs in slate and frames in oak; the Crimson Host roofs in clay tile
@@ -304,13 +343,13 @@ npm test
 | `click.test.js` | Input reliability: one click selects, a green ghost always places, log toasts never eat a click, cards survive being rebuilt mid-press |
 | `economy.test.js` | Selection, placement, the save/load round trip, market trade, menus and toggles |
 | `combat.test.js` | Orders: attack, attack-move, hold, stop, minimap orders, double-click type-select |
-| `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger |
+| `features.test.js` | Patrol, garrison, repair, upgrade lines, the statistics ledger, the builder's toolkit — that facing survives a save, that tearing down releases the garrison and refunds only unbuilt work — and that each age re-dresses a house more than the last |
 | `water.test.js` | Shorelines exist, docks are refused inland and accepted on shore, boats fish, land units stay dry and boats stay wet |
 | `factions.test.js` | Marauder camps and raiders, the three villager trades, and the standard: where it can be planted, that it counts, and that holding it wins |
 | `effects.test.js` | The volume sliders, the gathering rhythm and its debris, and what a blow does to a wall — chips, dust, a fading scar, and a ram that shakes the view |
 | `crown.test.js` | The tax: that the King's share is split the way it says, that a rate of nothing takes nothing, that prosperity climbs and never falls when the balance is spent, that discounts reach the till and not just the card, that public works come out of the reinvested share and not the purse, that the reserve can be opened, and that the whole account survives a save |
 | `harvest.test.js` | The year and the fields: that the seasons turn and re-dress the world without leaking sprites, that a field goes from broken ground to a harvest, that tending speeds it, that winter and worn-out soil both take their share, that fallow ground recovers, that granaries cap and food above the cap spoils, that everyone eats, that seed runs out, and that all of it survives a save |
-| `valley.test.js` | The four berries and that their yields really differ under a villager, that decorated ground still bakes fast, that birds fly and leave and are not entities, that a call carries over the bed, and that Natural Philosophy discovers its six compounds out of the work and remembers them through a save |
+| `valley.test.js` | The four berries and that their yields really differ under a villager, that decorated ground still bakes fast, that birds fly and leave and are not entities, that a call carries over the bed, and that Natural Philosophy discovers its six compounds out of the work and remembers them through a save, and the dogs: that a settlement keeps them, that they wander and stay dry and cannot be selected, and that a bark is synthesised, routed to the ambience bus, and pitched to its breed |
 | `paths.test.js` | Getting there: that a march arrives, that nobody stands still against a coastline, that a target in open water is refused rather than ground at, and that no unit ends with broken arithmetic |
 | `view.test.js` | The 3D view: that it builds, that a click lands on the pixel it was aimed at, that selecting, ordering and building all work through the camera, and that elevation never reaches the simulation |
 | `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed — and, for the standing board: that the same work moves any crown's score by the same amount, that the running order is always shown while the figures stay closed until you have found the crown, that the marauders never count as a crown, and that an old save seeds your books back out of the stats it already carried |
