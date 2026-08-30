@@ -205,6 +205,12 @@ the save, and a village gets a mix of facings by default. Until the image
 decodes — a matter of milliseconds — the procedural hovel stands in, and the
 swap is a cache key, not a redraw.
 
+The gold seam followed, and its four slots are not facings but the seam's
+life: rich, worked, low, and the dug-out pit its final tenth leaves before
+the last of it is carried away and the seam goes with it. The picture is
+driven by the same number the resource bar reads, so a mine visibly gives
+out as it is worked, which no procedural rock in the game ever did.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
