@@ -93,6 +93,8 @@ window.__IV={
   dbg:()=>{ DBG.on=true; return DBG; },
   hMain:(a,set,f)=>isoHouseMain(a,set|0,f|0), hTint:(o,a)=>isoHouseTint(o,a==null?1:a), hStage:(st,a)=>isoHouseStage(st,a==null?1:a),
   hArt:(f)=>{ const s2=artOf('house:0',f|0); return !!(s2&&s2.ok); },
+  gArt:(st)=>{ const s2=artOf('gold',st|0); return !!(s2&&s2.ok); },
+  gSt:(f)=>isoGoldState(f), gSpr:(st)=>isoGoldSprite(st),
   hDmg:(d)=>isoHouseDmg(d), hShadow:()=>isoShadowSprite('house'), hGeo:()=>isoGeo('house'),
   hBuildStage:(b)=>isoBuildStage(b), hDmgState:(b)=>isoDmgState(b),
   setHeat:(v)=>{ battleHeat=v; }, mix:()=>gradeMix(),

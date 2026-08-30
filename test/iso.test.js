@@ -297,6 +297,31 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and its four facings are four pictures (' + art.d01 + '/' + art.d12 + '/' +
      art.d23 + ' px between neighbours)', art.d01 > 800 && art.d12 > 800 && art.d23 > 800);
 
+  // ---- the gold seam is authored artwork that runs down as it is worked ----
+  await page.waitForFunction(() => [0, 1, 2, 3].every(st => window.__IV.gArt(st)),
+                             null, { timeout: 8000 });
+  const seam = await page.evaluate(() => {
+    const g = window.__IV;
+    const walk = [1, 0.5, 0.2, 0.05].map(f => g.gSt(f));
+    const sp = [0, 1, 2, 3].map(st => g.gSpr(st));
+    // Unlike the house these canvases are sized per state; what must hold is
+    // that every state grounds its dirt diamond at the same tile centre -
+    // the same distance from the image's resting bottom edge to the anchor.
+    const oneAnchor = sp.every(s2 => s2.ox === sp[0].ox &&
+                                     (s2.h - s2.oy) === (sp[0].h - sp[0].oy));
+    const d = (a, b2) => { let n = 0;
+      for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+        if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 1] - b2[i + 1]) +
+            Math.abs(a[i + 2] - b2[i + 2]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+      return n; };
+    const P = sp.map(s2 => g.px(s2));
+    return { walk, oneAnchor, d01: d(P[0], P[1]), d23: d(P[2], P[3]) };
+  });
+  ok('a worked seam walks rich, worked, low, dug out (' + seam.walk.join(',') + ')',
+     seam.walk.join(',') === '0,1,2,3' && seam.oneAnchor);
+  ok('and the states are four pictures (' + seam.d01 + '/' + seam.d23 + ' px differ)',
+     seam.d01 > 250 && seam.d23 > 250);
+
   // ---- selection follows the footprint, not the roof -----------------------
   const selTest = await page.evaluate(() => {
     const g = window.__IV;
