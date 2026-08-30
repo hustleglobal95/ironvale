@@ -85,6 +85,8 @@ window.__IV={
   spriteCount:()=>Object.keys(SPRITE).length,
   chunks:()=>chunkCache.size,
   fallen:()=>fallen, spent:()=>spent,
+  dogs:()=>dogs, bark:(b)=>SFX.bark(b), raze:(b)=>demolish(b),
+  terr:()=>terrain, MW:()=>MAP_W,
   sparks:()=>sparks, puffs:()=>puffs, wrecks:()=>wrecks,
   hitFx:(a,b)=>hitDebris(a,b), rubble:(t)=>rubbleSprite(t),
   // the three-dimensional view

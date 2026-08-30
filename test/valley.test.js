@@ -230,6 +230,107 @@ const { chromium, wrap, boot } = require('./harness');
      ' tree sprites, ' + wood.mem.tmb + 'MB)',
      wood.mem.tn <= 200 && wood.mem.tmb < 4);
 
+  // ---- the dogs ----------------------------------------------------------
+  // A settlement keeps dogs the way the valley keeps birds: decoration with
+  // discipline. Not entities, so nothing can select or order one; different
+  // breeds, so they read apart at a glance; and a bark that is synthesised
+  // like every other sound in the game and carries over the bed without
+  // shouting over a battle.
+  const dog = await page.evaluate(async () => {
+    const g = window.__IV;
+    let D = g.dogs();
+    for (let i = 0; i < 20 && !D.length; i++) { await new Promise(r => setTimeout(r, 250)); D = g.dogs(); }
+    const was = D.map(d => [d.x, d.y]);
+    await new Promise(r => setTimeout(r, 2600));
+    return { n: D.length,
+             breeds: new Set(D.map(d => d.breed)).size,
+             moved: D.some((d, i) => Math.hypot(d.x - was[i][0], d.y - was[i][1]) > 10),
+             dry: D.every(d => g.terr()[((d.y / 28) | 0) * g.MW() + ((d.x / 28) | 0)] !== 5),   // 5 is WATER; 0-4 are the grass families
+             notEnt: g.ents().every(e => e.kind !== 'dog') };
+  });
+  ok('the settlement keeps dogs (' + dog.n + ', ' + dog.breeds + ' breeds)',
+     dog.n >= 2 && dog.breeds >= 2);
+  ok('they wander the town', dog.moved);
+  ok('and stay off the water', dog.dry);
+  ok('nothing can select a dog — they are not entities', dog.notEnt);
+
+  // The bark. A hard loudness threshold is the wrong test here and it is
+  // worth writing down why: a dog's voice lives in the wind's own register -
+  // that is realistic - and under headless Chromium's null sink the analyser
+  // floor wanders more than the margin a correctly-quiet bark clears it by.
+  // The bird call gets away with its threshold because a whistle at three
+  // kilohertz carries over a bed that has nothing up there. So this asserts
+  // what is actually contractual: the bark is synthesised (two voices and a
+  // noise consonant per syllable, no samples - nothing in this game is), it
+  // goes to the ambience bus and nowhere else, the breeds speak in different
+  // registers, and the analyser hears more with a bark than without one.
+  const bark = await page.evaluate(async () => {
+    const S = window.__IV.sfxObj(), g0 = window.__IV;
+    const tc0 = g0.ents().find(e => e.type === 'tc' && e.owner === 0);
+    g0.cam().x = tc0.x - innerWidth / 2; g0.cam().y = tc0.y - innerHeight / 2;
+    while (g0.flocks().length) g0.flocks().pop();
+    S.birdAt = 999; S.dogAt = 999;
+    // count what one bark builds, and where it is wired
+    const made = { osc: 0, noise: 0, toAmb: 0, elsewhere: 0 };
+    const ctx = S.ctx;
+    const oldOsc = ctx.createOscillator.bind(ctx), oldBuf = ctx.createBufferSource.bind(ctx);
+    const oldConn = GainNode.prototype.connect;
+    ctx.createOscillator = () => { made.osc++; return oldOsc(); };
+    ctx.createBufferSource = () => { made.noise++; return oldBuf(); };
+    GainNode.prototype.connect = function (dst) {
+      if (dst === S.amb) made.toAmb++;
+      else if (dst instanceof AudioDestinationNode) made.elsewhere++;
+      return oldConn.apply(this, arguments);
+    };
+    window.__IV.bark(0);
+    ctx.createOscillator = oldOsc; ctx.createBufferSource = oldBuf;
+    GainNode.prototype.connect = oldConn;
+    // registers: a mastiff speaks lower than a terrier by construction
+    // (the parameter table is not exported, so read it off the graph)
+    const f = [];
+    ctx.createOscillator = () => { const o = oldOsc();
+      const sv = o.frequency.setValueAtTime.bind(o.frequency);
+      o.frequency.setValueAtTime = (v, tt) => { f.push(v); return sv(v, tt); };
+      return o; };
+    window.__IV.bark(0); const mastiff = Math.min(...f);
+    f.length = 0;
+    window.__IV.bark(3); const terrier = Math.min(...f);
+    ctx.createOscillator = oldOsc;
+    // and the smoke check: the analyser hears more with a bark than without
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048; an.smoothingTimeConstant = 0;
+    S.master.connect(an);
+    const bins = new Uint8Array(an.frequencyBinCount);
+    const hz = i => i * ctx.sampleRate / 2 / an.frequencyBinCount;
+    const band = () => { an.getByteFrequencyData(bins);
+      let m = 0;
+      for (let i = 0; i < bins.length; i++) { const q = hz(i); if (q >= 2300 && q < 3400 && bins[i] > m) m = bins[i]; }
+      return m; };
+    const peak = async ms => { let p = 0; const t0 = performance.now();
+      while (performance.now() - t0 < ms) { window.__IV.calm();
+        while (g0.flocks().length) g0.flocks().pop();
+        p = Math.max(p, band());
+        await new Promise(r => setTimeout(r, 8)); }
+      return p; };
+    const fxWas = S.fxVol;
+    S.fxVol = 0; if (S.fx) S.fx.gain.value = 0;
+    await new Promise(r => setTimeout(r, 800));
+    const quiet = await peak(700);
+    window.__IV.bark(3); window.__IV.bark(3);
+    setTimeout(() => { window.__IV.bark(3); }, 350);
+    const loud = await peak(1200);
+    S.fxVol = fxWas; if (S.fx) S.fx.gain.value = fxWas;
+    return { made, mastiff, terrier, quiet, loud };
+  });
+  ok('a bark is synthesised, not sampled (' + bark.made.osc + ' voices, ' +
+     bark.made.noise + ' consonants)', bark.made.osc >= 2 && bark.made.noise >= 1);
+  ok('and it goes to the ambience bus, nowhere else (' + bark.made.toAmb + ' connections)',
+     bark.made.toAmb >= 2 && bark.made.elsewhere === 0);
+  ok('a mastiff speaks lower than a terrier (' + Math.round(bark.mastiff) + 'Hz vs ' +
+     Math.round(bark.terrier) + 'Hz)', bark.mastiff < bark.terrier * 0.5);
+  ok('and the valley is louder with a dog in it (' + bark.quiet + ' -> ' + bark.loud + ')',
+     bark.loud > bark.quiet);
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();

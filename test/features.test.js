@@ -147,5 +147,58 @@ await page.evaluate(j=>window.__IV.restore(JSON.parse(j)),snap);
 await page.waitForTimeout(400);
 ok('save keeps history', await page.evaluate(()=>window.__IV.hist().length>0));
 ok('save keeps upgrades', await page.evaluate(()=>window.__IV.sides()[0].up.militia));
+// ---- the builder's toolkit --------------------------------------------------
+// Facing is cosmetic and survives a save; tearing down is voluntary and polite:
+// shelterers step out, a cancelled frame refunds most of its materials, a
+// finished building refunds nothing.
+const kit = await page.evaluate(() => {
+  const g = window.__IV, s = g.sides()[0];
+  s.f = s.w = s.g = 9e5;
+  const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+  const h = g.mk(0, 'house', tc.tx + 7, tc.ty + 6, true);
+  h.flip = true;
+  g.restore(JSON.parse(JSON.stringify(g.snap())));
+  const h2 = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+  const kept = !!(h2 && h2.flip);
+  const s2 = g.sides()[0];
+  s2.f = s2.w = s2.g = 9e5;
+  const tc2 = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+  const b = g.mk(0, 'barracks', tc2.tx + 7, tc2.ty + 10, true);
+  const v = g.spawn(0, 'vil', b.x, b.y);
+  b.garr.push(v); v.inside = b;
+  const w0 = s2.w, wr0 = g.wrecks().length;
+  g.raze(b);
+  const doneRefund = s2.w - w0, alive = !v.dead;
+  const c = g.mk(0, 'house', tc2.tx + 11, tc2.ty + 10, false);
+  const w1 = s2.w;
+  g.raze(c);
+  return { kept, doneRefund, alive, wreck: g.wrecks().length > wr0,
+           gone: b.dead && c.dead, back: s2.w - w1 };
+});
+ok('a building turned about stays turned through a save', kit.kept);
+ok('torn down means gone, and it comes down like a razing', kit.gone && kit.wreck);
+ok('a finished building refunds nothing (' + kit.doneRefund + ')', kit.doneRefund === 0);
+ok('whoever was sheltering steps out alive first', kit.alive);
+ok('a cancelled construction returns most of its materials (' + kit.back + ' W)', kit.back > 0);
+
+// ---- the ages reach the walls -----------------------------------------------
+// The one item of the original brief the town never showed: it looked the same
+// in Imperial as it did in Dark. Each age re-dresses every building through the
+// sprite key, and each is a bigger change than the last.
+const ages = await page.evaluate(() => {
+  const g = window.__IV, s = g.sides()[0];
+  const diff = (A, B) => { let n = 0;
+    for (let i = 0; i < A.length; i += 4)
+      if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 40) n++;
+    return n; };
+  const at = a => { s.age = a; return g.px(g.bsprite('house', 0, 0, 0)); };
+  const d0 = at(0), d1 = at(1), d2 = at(2), d3 = at(3);
+  s.age = 1;
+  return { d01: diff(d0, d1), d12: diff(d1, d2), d13: diff(d1, d3) };
+});
+ok('a Dark Age house is rougher than a Feudal one (' + ages.d01 + ' px)', ages.d01 > 60);
+ok('the Castle Age brings the masons (' + ages.d12 + ' px)', ages.d12 > 80);
+ok('and the Imperial Age finishes what they started (' + ages.d13 + ' px)', ages.d13 > ages.d12);
+
 console.log('ERRORS:', errs.length?errs.join('\n'):'none');
 await b.close(); })();
