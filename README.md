@@ -147,6 +147,29 @@ body maps to ground behind the feet and whatever stands there would steal the
 pick. F3 shows the debug overlay: renderer, fps, drawn and culled counts, cache
 sizes — in either view.
 
+**The house is the building asset contract.** The port's first native building
+was a projection prototype - geometry drawn straight into one bake, owner and
+all. It has been rebuilt the way the classic sprite-based engines built theirs:
+an invisible gameplay footprint on the tile grid, and above it a stack of
+layers that are authored once and only ever blitted - shadow on the ground,
+then a construction stage or the main sprite, then the crown as a tint layer,
+then damage overlays, then selection. The main sprite is resolved by
+architecture set and age, never by owner: five bakes serve every house on the
+map, and the crown arrives as cloth by the door and a pennant at the ridge.
+Construction is five authored stages driven by real progress - cleared footing,
+timber frame, part-raised walls with scaffold, the roof going on, and a
+nearly-done house with the ladder still against the wall - and damage is three
+overlays driven by health, with smoke and a restrained fire at the worst of it.
+Every layer of every state shares exactly the same canvas and the same anchor,
+so a state change cannot move, resize or drift the building - an assertion
+holds that for all twenty-eight sprites there are. The footprint is the
+simulation's whole knowledge of the house: the roof overhangs it freely,
+blocks nothing, and selection follows the footprint, never the picture. F3
+draws the footprints and anchors over the running game. Chasing why it once
+drew nothing turned up a real bug: a second `onScreen` declaration, added for
+the 3D view, had been shadowing the isometric one and silently mis-culling
+the ground pass.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
@@ -390,7 +413,7 @@ npm test
 | `courts.test.js` | The four crowns: that three settlements really run themselves, that relations read the same from either side, that each one names a foe and they do not all name the same one, that an oath takes a crown off you, that losing spears to horse makes them raise spears and razing their buildings makes them want towers, that letters land in the feed, that envoys can be paid or refused, that you can write back, that a save carries every oath, every dispatch and everything each crown has learned — including one written before the neighbours existed — and, for the standing board: that the same work moves any crown's score by the same amount, that the running order is always shown while the figures stay closed until you have found the crown, that the marauders never count as a crown, and that an old save seeds your books back out of the stats it already carried |
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 | `houses.test.js` | The four crowns' faces: that each roofs its whole settlement in one material and no two share it, that the roof in the picture is the roof on the table, that a knight of another house is built differently rather than tinted differently, that a roof carries snow in winter and not in summer, that only the two winter boundaries rebake a settlement, and that none of it is in the save |
-| `iso.test.js` | The isometric slice: the projection round-trips exactly, the toggle holds the view centre and is remembered, clicking a figure at its drawn position selects it, an order lands on the pointed ground and the unit arrives, the ghost matches the aimed tile, the drawn box selects what it covers, a figure south of a house draws in front of it, and off means off |
+| `iso.test.js` | The isometric slice: the projection round-trips exactly, the toggle holds the view centre and is remembered, clicking a figure at its drawn position selects it, an order lands on the pointed ground and the unit arrives, the ghost matches the aimed tile, the drawn box selects what it covers, a figure south of a house draws in front of it, and off means off; and the house contract: twenty-eight state sprites on one canvas and one anchor, construction walking its five stages and holding through a pause, damage walking its thresholds and repair walking them back, one main sprite per architecture set with the crown as a tint layer, an age advance that re-dresses without touching the entity, footprint-true selection that ignores the roof, a villager walking under the roofline, and thirty houses standing together |
 | `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
 
 Individual suites: `npm run test:water`, and so on.

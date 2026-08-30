@@ -7143,10 +7143,19 @@ function draw(){
     // building shadows: a soft pool thrown along +x in world space, which is
     // exactly screen lower-right once projected
     for(const b of bldCache){
-      if(b.dead||b.type==='plot'||b.building) continue;
+      if(b.dead||b.type==='plot') continue;
       if(b.owner!==PLAYER && !knows(b)) continue;
       if(!onScreen(b.x,b.y,300)) continue;
       const bw=b.w*TILE, bh=b.h*TILE;
+      if(ISOBLD[b.type]){
+        // the asset's own shadow layer, deepening as the building goes up
+        const sh=isoShadowSprite(b.type);
+        ctx.globalAlpha=b.building?0.25+0.75*Math.min(1,b.prog/Math.max(1,b.buildTime)):1;
+        ctx.drawImage(sh.c, b.tx*TILE-sh.ox+bw*0.16, b.ty*TILE-sh.oy+bh*0.05, sh.w, sh.h);
+        ctx.globalAlpha=1;
+        continue;
+      }
+      if(b.building) continue;
       const rise=bh + bw*formOf(b.type).pitch;
       ctx.fillStyle='rgba('+LIGHT.deep+',.10)';
       ctx.beginPath();
@@ -7508,6 +7517,29 @@ function drawOverlay(W,H){
                  ' r'+(DBG.byKind.res|0)+' d'+(DBG.byKind.dog|0)+') · culled '+DBG.culled, 16, HUD_TOP+38);
     ctx.fillText('chunks '+chunkCache.size+' · sprites '+Object.keys(SPRITE).length, 16, HUD_TOP+52);
     ctx.restore();
+    if(ISO.on){
+      // the gameplay footprint, which the picture only ever decorates
+      ctx.save();
+      ctx.translate(-cam.x,-cam.y);
+      ctx.transform(1,0.5,-1,0.5,0,0);
+      ctx.strokeStyle='rgba(120,225,255,.95)'; ctx.lineWidth=2.6;
+      lists();
+      DBG.fpN=0;
+      for(const b of bldCache){
+        if(b.dead||!onScreen(b.x,b.y,300)) continue;
+        DBG.fpN++;
+        ctx.strokeRect(b.tx*TILE+0.5, b.ty*TILE+0.5, b.w*TILE-1, b.h*TILE-1);
+        ctx.fillStyle='rgba(120,225,255,.25)';
+        ctx.fillRect(b.tx*TILE, b.ty*TILE, b.w*TILE, b.h*TILE);
+      }
+      ctx.restore();
+      ctx.fillStyle='rgba(120,220,255,.9)';
+      for(const b of bldCache){
+        if(b.dead||!onScreen(b.x,b.y,300)) continue;
+        const A=scr(b.tx*TILE, b.ty*TILE);
+        ctx.fillRect(A.x-2, A.y-2, 4, 4);       // the anchor itself
+      }
+    }
   }
 
   {
@@ -9588,116 +9620,330 @@ function bldDamage(g,type,px,py,w,h,tier){
   g.restore();
 }
 
-/* ---- native isometric assets ----------------------------------------------
-   The first building re-authored for the isometric camera, and the drawing
-   rules every later conversion follows. Local coordinates put the footprint's
-   NORTH corner (world tx,ty) at the origin; for a footprint of bw x bh world
-   pixels the ground diamond is
-       N(0,0)  E(+bw,+bw/2)  S(+bw-bh,+(bw+bh)/2)  W(-bh,+bh/2)
-   Walls rise straight up (screen -y). The sun is the same sun as everywhere:
-   upper-left, so the south-west face is lit, the south-east face is shaded,
-   and the cast shadow on the ground was already drawn by the ground pass. */
+/* ---- the building asset contract ------------------------------------------
+   The house is the master asset for every isometric building to come, and it
+   is built the way the classic sprite-based RTS engines built theirs: an
+   invisible gameplay footprint on the tile grid, and above it a stack of
+   layers that are AUTHORED ONCE and only ever blitted -
+
+     ground -> shadow -> construction stage or main sprite
+            -> player-colour mask -> damage overlay -> selection
+
+   Every layer of every state - five construction stages, the finished house
+   in each age, three damage overlays, the colour mask, the shadow - shares
+   EXACTLY the same canvas size and the same anchor (the local pixel of the
+   footprint's north corner), which is what makes it mechanically impossible
+   for a state change to shift, resize or drift the building. One assertion in
+   iso.test.js holds that contract for every state there is.
+
+   The main sprite is owner-INDEPENDENT: one bake serves all five crowns, and
+   the crown arrives as a separate tint mask - cloth by the door and a pennant
+   above the ridge, nothing structural - which is the palette-swap mechanic by
+   another name. There are no files; "pre-rendered" here means rendered once
+   into an offscreen canvas and never per frame, which is the same economy the
+   old engines bought with their sprite sheets.
+
+   The footprint is the simulation's whole knowledge of the building. Roof,
+   chimney and pennant overhang it freely; they block nothing, and selection
+   follows the footprint, never the picture. */
 const ISOBLD={house:1};
-function isoBldSprite(type,owner){
+function isoGeo(type){
   const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE;
-  const wallH=30, roofH=26, pad=8;
-  const W2=bw+bh+pad*2, H2=(bw+bh)/2+wallH+roofH+pad*2;
-  const age=(sides[owner]&&sides[owner].age)|0;
-  return sprite('IB'+type+owner+'a'+age+'s'+(seasonNow===3?1:0), W2, H2, g=>{
-    const ox=bh+pad, oy=wallH+roofH+pad;      // where local (0,0) sits
-    g.translate(ox,oy);
-    const N=[0,0], E=[bw,bw/2], S=[bw-bh,(bw+bh)/2], Wp=[-bh,bh/2];
+  const wallH=30, roofH=26, pad=10;
+  return { bw, bh, wallH, roofH, pad,
+           W:bw+bh+pad*2, H:(bw+bh)/2+wallH+roofH+pad*2,
+           ax:bh+pad, ay:wallH+roofH+pad*2 };   // anchor: local px of world (tx,ty)
+}
+// The ground diamond and its raised counterpart, in anchor-relative pixels.
+function isoCorners(G){
+  const {bw,bh}=G;
+  return { N:[0,0], E:[bw,bw/2], S:[bw-bh,(bw+bh)/2], Wc:[-bh,bh/2] };
+}
+function isoPoly(g,pts){ g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0],pts[i][1]); g.closePath(); }
+
+// ---- the shadow layer: authored in WORLD space, drawn by the ground pass
+// through the projection, so it always lies on the ground and under everything
+function isoShadowSprite(type){
+  const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE, pad=26;
+  return sprite('IH:shadow:'+type, bw+pad*2, bh+pad*2, g=>{
+    const soft=(k,a)=>{
+      g.fillStyle='rgba('+LIGHT.deep+','+a+')';
+      g.beginPath();
+      g.ellipse(pad+bw/2+ k*14, pad+bh/2+ k*4, bw*0.55*(1+k*0.12), bh*0.55*(1+k*0.12), 0, 0, 6.283);
+      g.fill();
+    };
+    soft(1.6,0.05); soft(1.0,0.08); soft(0.4,0.12);
+  }, {ox:pad, oy:pad});
+}
+
+// ---- the main sprite, resolved by architectureSet + age, never by owner.
+// The architecture set is the crown's building tradition - Ironvale roofs in
+// slate, the Crimson Host in clay tile, and so on, the same materials the
+// classic renderer gives them - and it is a different axis from the crown
+// itself: the crown's COLOUR arrives only in the tint layer. Five sets at
+// most, so five bakes serve every house on the map.
+function isoHouseMain(age,set){
+  const G=isoGeo('house');
+  return sprite('IH:main:s'+(set|0)+':a'+age+(seasonNow===3?':w':''), G.W, G.H, g=>{
+    g.translate(G.ax, G.ay);
+    const {N,E,S,Wc}=isoCorners(G), wallH=G.wallH, roofH=G.roofH;
     const up=(p,h)=>[p[0],p[1]-h];
-    const N2=up(N,wallH), E2=up(E,wallH), S2=up(S,wallH), W2p=up(Wp,wallH);
-    const poly=(pts)=>{ g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
-      for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0],pts[i][1]); g.closePath(); };
-    const wallCol=d.wall||'#D3C49D';
-    // ---- foundation: a rubble course standing just proud of the ground
-    poly([Wp,S,E,up(E,5),up(S,5),up(Wp,5)]);
-    g.fillStyle='#8A8272'; g.fill();
-    g.fillStyle='rgba(20,16,10,.30)'; poly([Wp,S,E,up(E,1.6),up(S,1.6),up(Wp,1.6)]); g.fill();
-    // ---- the south-west face, in the sun
-    poly([Wp,S,up(S,wallH),up(Wp,wallH)]);
-    g.fillStyle=wallCol; g.fill();
-    g.fillStyle='rgba(255,244,214,.16)'; g.fill();       // the sun on it
-    // half-timbering runs with the face, which is what keeps the wall reading
-    // as a receding plane rather than a flat trapezium
-    g.strokeStyle=sigOf(owner).beam; g.lineWidth=2;
+    const N2=up(N,wallH), E2=up(E,wallH), S2=up(S,wallH), W2=up(Wc,wallH);
+    // foundation
+    isoPoly(g,[Wc,S,E,up(E,5),up(S,5),up(Wc,5)]);
+    g.fillStyle= age>=2 ? '#9A927E' : '#8A8272'; g.fill();
+    g.fillStyle='rgba(20,16,10,.30)'; isoPoly(g,[Wc,S,E,up(E,1.6),up(S,1.6),up(Wc,1.6)]); g.fill();
+    // south-west face, in the sun
+    isoPoly(g,[Wc,S,S2,W2]);
+    g.fillStyle= age===0 ? '#C2B292' : '#D3C49D'; g.fill();
+    g.fillStyle='rgba(255,244,214,.16)'; g.fill();
+    g.strokeStyle='rgba(78,60,38,.62)'; g.lineWidth=2;
     for(let i=1;i<3;i++){
-      const t=i/3;
-      const gx=Wp[0]+(S[0]-Wp[0])*t, gy=Wp[1]+(S[1]-Wp[1])*t;
+      const t=i/3, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
       g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
     }
     g.beginPath();
-    g.moveTo(Wp[0]+1,Wp[1]-wallH*0.55+ (S[1]-Wp[1])*0);
-    g.lineTo(S[0]-1, S[1]-wallH*0.55); g.stroke();
-    // door on the lit face, at its centre
+    g.moveTo(Wc[0]+1, Wc[1]-wallH*0.55);
+    g.lineTo(S[0]-1,  S[1]-wallH*0.55); g.stroke();
+    if(age===0){                                     // making do
+      g.fillStyle='rgba(88,74,52,.30)';
+      g.fillRect(Wc[0]+6, Wc[1]-wallH*0.8, 9, 8);
+      g.fillRect(S[0]-16, S[1]-wallH*0.5, 8, 7);
+    }
+    if(age>=2){                                      // the masons' footing
+      g.fillStyle='rgba(120,116,106,.9)';
+      isoPoly(g,[Wc,S,up(S,9),up(Wc,9)]); g.fill();
+      g.strokeStyle='rgba(50,44,34,.4)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(Wc[0],Wc[1]-9); g.lineTo(S[0],S[1]-9); g.stroke();
+    }
+    // door, centred on the lit face
     {
-      const t=0.5, gx=Wp[0]+(S[0]-Wp[0])*t, gy=Wp[1]+(S[1]-Wp[1])*t;
+      const t=0.5, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
       g.fillStyle='#4A3826'; g.fillRect(gx-5, gy-19, 10, 17);
       g.fillStyle='rgba(0,0,0,.4)'; g.fillRect(gx-5, gy-19, 10, 3);
+      if(age>=2){ g.strokeStyle='rgba(60,64,70,.8)'; g.lineWidth=1.2;   // iron straps
+        g.beginPath(); g.moveTo(gx-5,gy-14); g.lineTo(gx+5,gy-14);
+        g.moveTo(gx-5,gy-7); g.lineTo(gx+5,gy-7); g.stroke(); }
       g.fillStyle='#E8C15A'; g.beginPath(); g.arc(gx+7.5, gy-11, 1.5, 0, 6.283); g.fill();
     }
-    // ---- the south-east face, in the shade
-    poly([S,E,up(E,wallH),up(S,wallH)]);
-    g.fillStyle=wallCol; g.fill();
-    g.fillStyle='rgba(38,48,78,.30)'; g.fill();          // sky-lit shade
+    // south-east face, in sky-shade
+    isoPoly(g,[S,E,E2,S2]);
+    g.fillStyle= age===0 ? '#C2B292' : '#D3C49D'; g.fill();
+    g.fillStyle='rgba(38,48,78,.30)'; g.fill();
     g.strokeStyle='rgba(40,30,20,.45)'; g.lineWidth=2;
     {
       const t=0.5, gx=S[0]+(E[0]-S[0])*t, gy=S[1]+(E[1]-S[1])*t;
       g.beginPath(); g.moveTo(gx,gy-4); g.lineTo(gx,gy-wallH+2); g.stroke();
-      // a shuttered window in the shade
       g.fillStyle='#241C12'; g.fillRect(gx+8, gy-22, 8, 8);
+      if(age>=3){                                    // glass, one pale diagonal
+        g.fillStyle='rgba(168,196,214,.4)'; g.fillRect(gx+8, gy-22, 8, 8);
+        g.strokeStyle='rgba(235,245,255,.6)'; g.lineWidth=1.2;
+        g.beginPath(); g.moveTo(gx+8,gy-15); g.lineTo(gx+14,gy-21); g.stroke();
+      }
       g.fillStyle='rgba(120,104,72,.6)'; g.fillRect(gx+7, gy-23, 10, 1.6);
     }
-    // the dark line where the two faces meet
     g.strokeStyle='rgba(24,18,10,.55)'; g.lineWidth=1.6;
     g.beginPath(); g.moveTo(S[0],S[1]); g.lineTo(S2[0],S2[1]); g.stroke();
-    // ---- the roof: a hip, its ridge shrunk in from the raised diamond
+    // hip roof
     const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
-    const RL=[rc[0]-bw*0.26+bh*0.10, rc[1]+ (0)], RR=[rc[0]+bw*0.26-bh*0.10, rc[1]];
-    const roofC=roofOf(d.roof,owner);
-    // south-west slope
-    poly([W2p,S2,RR,RL]); g.fillStyle=roofC; g.fill();
-    g.fillStyle='rgba(255,244,210,.20)'; g.fill();
-    // south-east slope, shaded
-    poly([S2,E2,RR]); g.fillStyle=roofC; g.fill();
-    g.fillStyle='rgba(30,38,64,.34)'; g.fill();
-    // north-west sliver so the silhouette closes
-    poly([W2p,RL,N2]); g.fillStyle=roofC; g.fill();
-    g.fillStyle='rgba(255,250,224,.10)'; g.fill();
-    poly([N2,RL,RR,E2]); g.fillStyle=roofC; g.fill();
-    g.fillStyle='rgba(24,30,52,.18)'; g.fill();
-    // courses across the two visible slopes
+    const RL=[rc[0]-G.bw*0.26+G.bh*0.10, rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10, rc[1]];
+    const roofC= age===0 ? '#8A7448' : roofOf(BLD.house.roof, set|0);
+    isoPoly(g,[W2,S2,RR,RL]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,244,210,.20)'; g.fill();
+    isoPoly(g,[S2,E2,RR]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(30,38,64,.34)'; g.fill();
+    isoPoly(g,[W2,RL,N2]);    g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(255,250,224,.10)'; g.fill();
+    isoPoly(g,[N2,RL,RR,E2]); g.fillStyle=roofC; g.fill(); g.fillStyle='rgba(24,30,52,.18)'; g.fill();
     g.strokeStyle='rgba(26,20,14,.22)'; g.lineWidth=1;
     for(let i=1;i<4;i++){
       const t=i/4;
       g.beginPath();
-      g.moveTo(W2p[0]+(RL[0]-W2p[0])*t, W2p[1]+(RL[1]-W2p[1])*t);
-      g.lineTo(S2[0]+(RR[0]-S2[0])*t,  S2[1]+(RR[1]-S2[1])*t);
-      g.lineTo(E2[0]+(RR[0]-E2[0])*t,  E2[1]+(RR[1]-E2[1])*t);
+      g.moveTo(W2[0]+(RL[0]-W2[0])*t, W2[1]+(RL[1]-W2[1])*t);
+      g.lineTo(S2[0]+(RR[0]-S2[0])*t, S2[1]+(RR[1]-S2[1])*t);
+      g.lineTo(E2[0]+(RR[0]-E2[0])*t, E2[1]+(RR[1]-E2[1])*t);
       g.stroke();
     }
-    // eaves throw their line onto the walls
+    if(age>=3){                                      // a carved line under the eaves
+      g.strokeStyle='rgba(240,228,190,.4)'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(W2[0],W2[1]-1.5); g.lineTo(S2[0],S2[1]-1.5); g.lineTo(E2[0],E2[1]-1.5); g.stroke();
+    }
     g.strokeStyle='rgba(20,16,10,.40)'; g.lineWidth=2.4;
-    g.beginPath(); g.moveTo(W2p[0],W2p[1]); g.lineTo(S2[0],S2[1]); g.lineTo(E2[0],E2[1]); g.stroke();
-    // the ridge, capped
+    g.beginPath(); g.moveTo(W2[0],W2[1]); g.lineTo(S2[0],S2[1]); g.lineTo(E2[0],E2[1]); g.stroke();
     g.strokeStyle='rgba(255,246,214,.5)'; g.lineWidth=2;
     g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
-    if(seasonNow===3){                                    // winter lies on it
+    if(seasonNow===3){
       g.strokeStyle='rgba(246,250,253,.92)'; g.lineWidth=3;
       g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
-      g.fillStyle='rgba(242,247,251,.40)';
-      poly([W2p,S2,RR,RL]); g.fill();
+      g.fillStyle='rgba(242,247,251,.40)'; isoPoly(g,[W2,S2,RR,RL]); g.fill();
     }
-    // chimney at the ridge end
     g.fillStyle='#6E6258'; g.fillRect(RR[0]-3, RR[1]-12, 6, 12);
     g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(RR[0]-3, RR[1]-12, 2, 12);
-    // contact: the building presses on its ground
     g.strokeStyle='rgba(16,12,8,.35)'; g.lineWidth=2;
-    g.beginPath(); g.moveTo(Wp[0],Wp[1]); g.lineTo(S[0],S[1]); g.lineTo(E[0],E[1]); g.stroke();
-  }, {ox:bh+pad, oy:wallH+roofH+pad});
+    g.beginPath(); g.moveTo(Wc[0],Wc[1]); g.lineTo(S[0],S[1]); g.lineTo(E[0],E[1]); g.stroke();
+  }, {ox:isoGeo('house').ax, oy:isoGeo('house').ay});
 }
+
+// ---- the crown, as its own layer: cloth by the door, a pennant at the ridge
+function isoHouseTint(owner){
+  const G=isoGeo('house');
+  return sprite('IH:tint:o'+owner, G.W, G.H, g=>{
+    g.translate(G.ax, G.ay);
+    const {S,Wc}=isoCorners(G);
+    const col=teamColor(owner), lit=teamLight(owner);
+    const t=0.5, gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
+    g.fillStyle=col;                                  // cloth hung beside the door
+    g.fillRect(gx-13, gy-18, 6, 12);
+    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(gx-13, gy-18, 2, 12);
+    // the pennant flies from the ridge's west end
+    const px2=(0+S[0])/2 - G.bw*0.26 + G.bh*0.10, py2=(0+S[1])/2 - G.wallH - G.roofH;
+    g.strokeStyle='#3A2E22'; g.lineWidth=1.6;
+    g.beginPath(); g.moveTo(px2,py2); g.lineTo(px2,py2-11); g.stroke();
+    g.fillStyle=lit;
+    g.beginPath(); g.moveTo(px2,py2-11);
+    g.quadraticCurveTo(px2+8,py2-9, px2+11,py2-7.5);
+    g.quadraticCurveTo(px2+7,py2-6, px2,py2-5); g.closePath(); g.fill();
+  }, {ox:G.ax, oy:G.ay});
+}
+
+// ---- construction, five authored stages on the one anchor ------------------
+// 0 cleared ground and footing  1 timber frame  2 partial walls + scaffold
+// 3 the roof going on           4 nearly complete
+function isoHouseStage(st){
+  const G=isoGeo('house');
+  return sprite('IH:stage:'+st, G.W, G.H, g=>{
+    g.translate(G.ax, G.ay);
+    const {N,E,S,Wc}=isoCorners(G), wallH=G.wallH, roofH=G.roofH;
+    const up=(p,h)=>[p[0],p[1]-h];
+    // every stage stands on the same cleared ground
+    isoPoly(g,[N,E,S,Wc]); g.fillStyle='rgba(120,100,70,.42)'; g.fill();
+    isoPoly(g,[Wc,S,E,up(E,4),up(S,4),up(Wc,4)]);
+    g.fillStyle='#8A8272'; g.fill();
+    if(st===0){                                       // footing, stakes, a spoil heap
+      g.strokeStyle='rgba(90,70,46,.8)'; g.lineWidth=1.6;
+      for(const c of [N,E,S,Wc]){ g.beginPath(); g.moveTo(c[0],c[1]-2); g.lineTo(c[0],c[1]-9); g.stroke(); }
+      g.fillStyle='rgba(110,92,64,.7)';
+      g.beginPath(); g.ellipse(E[0]-14,E[1]+2,9,4,0,0,6.283); g.fill();
+      return;
+    }
+    const N2=up(N,wallH), E2=up(E,wallH), S2=up(S,wallH), W2=up(Wc,wallH);
+    // the frame every later stage keeps
+    g.strokeStyle='#6B5233'; g.lineWidth=2.6; g.lineCap='round';
+    for(const [a,b2] of [[Wc,W2],[S,S2],[E,E2],[N,N2]]){
+      g.beginPath(); g.moveTo(a[0],a[1]-3); g.lineTo(b2[0],b2[1]); g.stroke();
+    }
+    for(const [a,b2] of [[W2,S2],[S2,E2],[W2,N2],[N2,E2]]){
+      g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b2[0],b2[1]); g.stroke();
+    }
+    if(st===1){                                       // a brace, and daylight
+      g.lineWidth=1.8;
+      g.beginPath(); g.moveTo(Wc[0],Wc[1]-4); g.lineTo(S2[0],S2[1]+6); g.stroke();
+      return;
+    }
+    // partial walls: wattle panels reaching partway up the two visible faces
+    const wh2= st===2 ? wallH*0.55 : wallH;
+    isoPoly(g,[Wc,S,up(S,wh2),up(Wc,wh2)]);
+    g.fillStyle= st===2 ? 'rgba(150,126,92,.85)' : '#CDBE97'; g.fill();
+    if(st>=3){ g.fillStyle='rgba(255,244,214,.12)'; g.fill(); }
+    isoPoly(g,[S,E,up(E,wh2),up(S,wh2)]);
+    g.fillStyle= st===2 ? 'rgba(132,110,80,.85)' : '#CDBE97'; g.fill();
+    if(st>=3){ g.fillStyle='rgba(38,48,78,.25)'; g.fill(); }
+    if(st===2){                                       // scaffold on the lit face
+      g.strokeStyle='rgba(122,92,54,.9)'; g.lineWidth=1.6;
+      for(const t of [0.2,0.8]){
+        const gx=Wc[0]+(S[0]-Wc[0])*t, gy=Wc[1]+(S[1]-Wc[1])*t;
+        g.beginPath(); g.moveTo(gx-4,gy+2); g.lineTo(gx-4,gy-wallH-6); g.stroke();
+      }
+      g.beginPath();
+      g.moveTo(Wc[0]+(S[0]-Wc[0])*0.2-4, Wc[1]+(S[1]-Wc[1])*0.2-wallH*0.7);
+      g.lineTo(Wc[0]+(S[0]-Wc[0])*0.8-4, Wc[1]+(S[1]-Wc[1])*0.8-wallH*0.7);
+      g.stroke();
+      return;
+    }
+    // the roof going on: rafters across, thatch advancing from the west
+    const rc=[(N2[0]+S2[0])/2,(N2[1]+S2[1])/2-roofH];
+    const RL=[rc[0]-G.bw*0.26+G.bh*0.10, rc[1]], RR=[rc[0]+G.bw*0.26-G.bh*0.10, rc[1]];
+    g.strokeStyle='#5E4A2C'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(RL[0],RL[1]); g.lineTo(RR[0],RR[1]); g.stroke();
+    for(let i=0;i<=4;i++){
+      const t=i/4;
+      g.beginPath();
+      g.moveTo(W2[0]+(S2[0]-W2[0])*t, W2[1]+(S2[1]-W2[1])*t);
+      g.lineTo(RL[0]+(RR[0]-RL[0])*t, RL[1]+(RR[1]-RL[1])*t);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(S2[0]+(E2[0]-S2[0])*t, S2[1]+(E2[1]-S2[1])*t);
+      g.lineTo(RL[0]+(RR[0]-RL[0])*Math.min(1,t+0.0), RL[1]);
+      g.stroke();
+    }
+    const cover= st===3 ? 0.5 : 1;
+    g.fillStyle='#7A6A55';
+    isoPoly(g,[W2,[W2[0]+(S2[0]-W2[0])*cover, W2[1]+(S2[1]-W2[1])*cover],
+               [RL[0]+(RR[0]-RL[0])*cover, RL[1]], RL]); g.fill();
+    g.fillStyle='rgba(255,244,210,.18)'; g.fill();
+    if(st===4){
+      g.fillStyle='#7A6A55'; isoPoly(g,[S2,E2,RR]); g.fill();
+      g.fillStyle='rgba(30,38,64,.30)'; g.fill();
+      // the ladder still against the wall is what says "nearly"
+      g.strokeStyle='rgba(122,92,54,.95)'; g.lineWidth=1.6;
+      const gx=S[0]+(E[0]-S[0])*0.35, gy=S[1]+(E[1]-S[1])*0.35;
+      g.beginPath(); g.moveTo(gx-3,gy+2); g.lineTo(gx+2,gy-wallH-4); g.stroke();
+      g.beginPath(); g.moveTo(gx+3,gy+2); g.lineTo(gx+8,gy-wallH-4); g.stroke();
+      for(let i=1;i<5;i++){
+        g.beginPath();
+        g.moveTo(gx-3+(5*i/5), gy+2-(wallH+6)*i/5);
+        g.lineTo(gx+3+(5*i/5), gy+2-(wallH+6)*i/5); g.stroke();
+      }
+    }
+  }, {ox:G.ax, oy:G.ay});
+}
+
+// ---- damage, as overlays over whatever the main sprite is ------------------
+function isoHouseDmg(ds){
+  const G=isoGeo('house');
+  return sprite('IH:dmg:'+ds, G.W, G.H, g=>{
+    g.translate(G.ax, G.ay);
+    const {E,S,Wc}=isoCorners(G), wallH=G.wallH;
+    g.strokeStyle='rgba(30,22,14,.6)'; g.lineWidth=1.4;
+    const crack=(gx,gy)=>{ g.beginPath(); g.moveTo(gx,gy);
+      g.lineTo(gx+3,gy-6); g.lineTo(gx-1,gy-11); g.lineTo(gx+2,gy-16); g.stroke(); };
+    crack(Wc[0]+(S[0]-Wc[0])*0.3, Wc[1]+(S[1]-Wc[1])*0.3-4);
+    if(ds>=2){
+      crack(S[0]+(E[0]-S[0])*0.6, S[1]+(E[1]-S[1])*0.6-6);
+      // a hole with the frame showing through it
+      const gx=Wc[0]+(S[0]-Wc[0])*0.72, gy=Wc[1]+(S[1]-Wc[1])*0.72-wallH*0.5;
+      g.fillStyle='rgba(20,14,8,.85)';
+      g.beginPath(); g.ellipse(gx,gy,7,5.4,0.3,0,6.283); g.fill();
+      g.strokeStyle='rgba(96,74,46,.9)'; g.lineWidth=1.2;
+      g.beginPath(); g.moveTo(gx-5,gy-3); g.lineTo(gx-5,gy+4);
+      g.moveTo(gx+1,gy-4); g.lineTo(gx+1,gy+4); g.stroke();
+      // soot above it
+      g.fillStyle='rgba(24,19,12,.4)';
+      g.beginPath(); g.ellipse(gx,gy-8,6,7,0,0,6.283); g.fill();
+      // missing roof over the west slope
+      g.fillStyle='rgba(26,18,10,.55)';
+      g.beginPath(); g.ellipse(Wc[0]+14, Wc[1]-wallH-10, 9, 5, -0.3, 0, 6.283); g.fill();
+    }
+    if(ds>=3){
+      const gx=S[0]+(E[0]-S[0])*0.35, gy=S[1]+(E[1]-S[1])*0.35-wallH*0.4;
+      g.fillStyle='rgba(14,10,6,.9)';
+      g.beginPath(); g.ellipse(gx,gy,10,8,0.2,0,6.283); g.fill();
+      g.fillStyle='rgba(30,20,10,.5)';
+      g.beginPath(); g.ellipse(gx,gy-12,9,10,0,0,6.283); g.fill();
+      g.fillStyle='rgba(20,14,8,.45)';
+      g.beginPath(); g.ellipse(0,-wallH-14,14,8,0,0,6.283); g.fill();
+    }
+  }, {ox:G.ax, oy:G.ay});
+}
+
+// state resolution: the entity never changes; the picture is looked up
+function isoBuildStage(b){
+  const p=Math.max(0,Math.min(1,b.prog/Math.max(1,b.buildTime)));
+  return p<0.10?0 : p<0.35?1 : p<0.65?2 : p<0.90?3 : 4;
+}
+function isoDmgState(b){
+  const h=b.hp/Math.max(1,b.maxHp);
+  return h>0.70?0 : h>0.40?1 : h>0.15?2 : 3;
+}
+
 /* ---- native isometric figures ---------------------------------------------
    Units in the isometric view face where they are actually going: the world
    heading is projected into the screen and the whole figure is built along
@@ -9835,14 +10081,41 @@ function drawIsoUnit(u,x,y){
   }
 }
 
-function drawIsoBld(b,W,H){
+function drawIsoBld(b){
   const S0=scr(b.tx*TILE, b.ty*TILE);
-  const sp=isoBldSprite(b.type,b.owner);
-  blit(sp, S0.x-sp.ox, S0.y-sp.oy);
+  if(b.building){
+    const st=isoBuildStage(b);
+    const sp=isoHouseStage(st);
+    blit(sp, S0.x-sp.ox, S0.y-sp.oy);
+    if(((b.id+((gameTime*4)|0))&3)===0&&puffs.length<240)
+      puffs.push({x:b.x+(rnd()-0.5)*b.w*TILE*0.5, y:b.y, t:0.6, r:3+rnd()*3});
+    ctx.fillStyle='#EBDFC4'; ctx.font='500 11px "Barlow Condensed", sans-serif'; ctx.textAlign='center';
+    ctx.fillText(Math.round(b.prog/b.buildTime*100)+'%', S0.x, S0.y+2);
+    ctx.textAlign='left';
+    barHp(b, S0.x-28, S0.y-sp.oy+6, 56);
+    return;
+  }
+  const main=isoHouseMain((sides[b.owner]&&sides[b.owner].age)|0, b.owner);
+  blit(main, S0.x-main.ox, S0.y-main.oy);
+  const tint=isoHouseTint(b.owner);
+  blit(tint, S0.x-tint.ox, S0.y-tint.oy);
+  const ds=isoDmgState(b);
+  if(ds>0){
+    const ov=isoHouseDmg(ds);
+    blit(ov, S0.x-ov.ox, S0.y-ov.oy);
+    if(ds>=2&&((b.id+((gameTime*3)|0))&7)===0&&puffs.length<235)
+      puffs.push({x:b.x+(rnd()-0.5)*20, y:b.y-8, t:1.1, r:3+rnd()*3, rise:1, dark:1});
+    if(ds>=3&&onScreen(b.x,b.y,120)){
+      const fl=SINT[((gameTime*26)|0)&63];
+      ctx.fillStyle='rgba(255,'+(140+fl*40|0)+',60,'+(0.34+fl*0.12)+')';
+      ctx.beginPath();
+      ctx.ellipse(S0.x+6, S0.y-4, 5+fl*2, 8+fl*2, 0, 0, 6.283); ctx.fill();
+    }
+  }
   if(b.flash>0){
     ctx.globalAlpha=Math.min(.5,b.flash*2);
     ctx.fillStyle='rgba(255,110,80,1)';
-    ctx.fillRect(S0.x-sp.ox, S0.y-sp.oy, sp.w, sp.h);
+    ctx.fillRect(S0.x-main.ox, S0.y-main.oy, main.w, main.h);
     ctx.globalAlpha=1;
   }
   if(sel.includes(b)){
@@ -9853,7 +10126,7 @@ function drawIsoBld(b,W,H){
     ctx.strokeRect(b.tx*TILE-2, b.ty*TILE-2, b.w*TILE+4, b.h*TILE+4);
     ctx.restore();
   }
-  barHp(b, S0.x-28, S0.y-sp.oy+6, 56);
+  barHp(b, S0.x-28, S0.y-main.oy+6, 56);
 }
 
 function drawBld(b){
@@ -9865,7 +10138,7 @@ function drawBld(b){
   // nor buries. Converted types take over below, one at a time.
   let px,py;
   if(ISO.on){
-    if(ISOBLD[b.type]&&!b.building){ drawIsoBld(b); return; }
+    if(ISOBLD[b.type]){ drawIsoBld(b); return; }
     const C=scr(b.x, b.y);
     px=C.x-w/2;
     py=C.y+(b.w+b.h)*TILE/4 - h - 6;
@@ -12656,11 +12929,19 @@ function pickBldAt(wx,wy){
 }
 // What counts as on screen. The 3D camera has no rectangle in world space, so
 // it answers with a radius around what it is looking at instead.
+// This is the declaration that wins - there is an earlier onScreen above, and
+// a second one was added when the 3D view needed a spherical test, shadowing
+// it. Every branch lives HERE now; the isometric port lost an afternoon to a
+// footprint overlay that tested against the wrong camera because of this.
 function onScreen(wx,wy,pad){
   if(V3.on&&V3.ready){
     const cx=cam.x+innerWidth/2, cy=cam.y+(innerHeight-HUD_BOT+HUD_TOP)/2;
     const r=V3.dist*1.15+pad;
     return (wx-cx)*(wx-cx)+(wy-cy)*(wy-cy) < r*r;
+  }
+  if(ISO.on){
+    const px=(wx-wy)-cam.x, py=(wx+wy)/2-cam.y;
+    return px>-pad && py>-pad && px<innerWidth+pad && py<innerHeight+pad;
   }
   return wx>cam.x-pad && wx<cam.x+innerWidth+pad &&
          wy>cam.y-pad && wy<cam.y+innerHeight+pad;
