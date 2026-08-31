@@ -343,6 +343,46 @@ const gait = await page.evaluate(() => {
 });
 ok('a walking painting rocks about its feet and rises on each footfall, and stands dead still when stood',
    gait.rocks && gait.rises && gait.plants && gait.still);
+// ---- the soldiers: three turntables of eight, and they still fight ---------
+await page.waitForFunction(() =>
+  window.__IV.s8('ma8') && window.__IV.s8('sp8') && window.__IV.s8('kn8'), null, { timeout: 12000 });
+const host = await page.evaluate(() => {
+  const g = window.__IV;
+  const d = (a, b2) => { let n = 0;
+    for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+      if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+    return n; };
+  const res = {};
+  for (const [t2, key] of [['militia', 'ma'], ['spear', 'sp'], ['knight', 'kn']]) {
+    const sp = [0, 1, 2, 3, 4, 5, 6, 7].map(o => g.uSpr(t2, 0, 0, 1, o << 3));
+    const onCanvas = sp.every(s2 => s2.w === sp[0].w && s2.h === sp[0].h);
+    const P = sp.map(s2 => g.px(s2));
+    res[key] = { onCanvas, ew: d(P[0], P[4]), sn: d(P[2], P[6]) };
+  }
+  res.cross = d(g.px(g.uSpr('militia', 0, 0, 1, 2 << 3)), g.px(g.uSpr('spear', 0, 0, 1, 2 << 3)));
+  return res;
+});
+ok('the man-at-arms, the spearman and the knight each turn through eight honest views (' +
+   host.ma.ew + '/' + host.sp.ew + '/' + host.kn.ew + ' px east-vs-west)',
+   host.ma.onCanvas && host.sp.onCanvas && host.kn.onCanvas &&
+   host.ma.ew > 150 && host.sp.ew > 150 && host.kn.ew > 200 &&
+   host.ma.sn > 150 && host.sp.sn > 150 && host.kn.sn > 200);
+ok('and a spearman is not a man-at-arms with a longer stick (' + host.cross + ' px)', host.cross > 200);
+
+const fight = await page.evaluate(async () => {
+  const g = window.__IV, tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+  const m = g.spawn(0, 'militia', tc.x - 260, tc.y + 320);
+  const foe = g.spawn(1, 'spear', tc.x - 240, tc.y + 320);
+  m.task = 'attack'; m.target = foe;
+  const hp0 = foe.hp, t0 = g.t();
+  await new Promise(res => { const w = () => (g.t() - t0 > 4 ? res() : setTimeout(w, 120)); w(); });
+  const hp1 = foe.hp;
+  m.dead = true; foe.dead = true;
+  return { hp0, hp1: Math.round(hp1) };
+});
+ok('and behind the painting the sword still lands (' + fight.hp0 + ' -> ' + fight.hp1 + ')',
+   fight.hp1 < fight.hp0);
+
 // ---- the drawn heading follows the feet, not the order ---------------------
 const vf = await page.evaluate(async () => {
   const g = window.__IV, tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
