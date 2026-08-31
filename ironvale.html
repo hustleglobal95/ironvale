@@ -2983,6 +2983,14 @@ function relaxLean(u,dt){ if(u.lean) u.lean+= -u.lean*Math.min(1,dt*5); }
 
 function updateUnit(u,dt){
   if(u.cd>0) u.cd-=dt;
+  {
+    const vsp=Math.hypot(u.vx||0,u.vy||0);
+    const want=vsp>12? Math.atan2(u.vy,u.vx) : u.face;
+    if(u.vface==null) u.vface=u.face;
+    let dv=want-u.vface;
+    while(dv>Math.PI) dv-=2*Math.PI; while(dv<-Math.PI) dv+=2*Math.PI;
+    u.vface+=dv*Math.min(1, dt*(vsp>12?10:6));
+  }
   if(Math.hypot(u.vx||0,u.vy||0)<4) relaxLean(u,dt);
   const regen=(UNIT[u.type].regen||0)+(sides[u.owner].mod.heal||0);
   if(regen){
@@ -10006,8 +10014,8 @@ function wolfArtFor(oct,coat){
     case 6: return {s:pick('wolfd:N'),  fl:0};
     case 7: return {s:pick('wolfd:NE'), fl:0};
     case 5: return {s:pick('wolfd:NE'), fl:1};
-    case 3: case 4: return {s:artOf('wolf',(coat|0)%5), fl:0};
-    default:        return {s:artOf('wolf',(coat|0)%5), fl:1};
+    case 3: case 4: return {s:artOf('wolf',(coat|0)%5), fl:1};
+    default:        return {s:artOf('wolf',(coat|0)%5), fl:0};
   }
 }
 function octOf(ax,ay){ return Math.round(Math.atan2(ay,ax)/(Math.PI/4))&7; }
@@ -10795,7 +10803,8 @@ function drawIsoUnit(u,x,y){
   const K=unitKit(u.type), S=UNIT[u.type].r*1.35;
   const col=teamColor(u.owner);
   // the heading, projected
-  const wc=Math.cos(u.face), ws=Math.sin(u.face);
+  const VF=u.vface!=null?u.vface:u.face;
+  const wc=Math.cos(VF), ws=Math.sin(VF);
   let fx=wc-ws, fy=(wc+ws)/2;
   const fl=Math.hypot(fx,fy)||1; fx/=fl; fy/=fl;
   const px2=-fy, py2=fx;                    // perpendicular, for the shoulders
@@ -10813,7 +10822,12 @@ function drawIsoUnit(u,x,y){
     ctx.beginPath(); ctx.ellipse(gx,gy,UNIT.king.aura*0.42,UNIT.king.aura*0.21,0,0,6.283); ctx.fill();
   }
   if(K.person){
-    const PA=vilArtFor(octOf(fx,fy), u.id&1);
+    // The slot is picked by the WORLD heading, exactly as the classic bake
+    // picks it. Bucketing the projected heading shifted every walker one
+    // octant - a man marching east wore the three-quarter view and read as
+    // walking sideways. The projection still moves him down-right; the
+    // profile is what the eye expects for travel that is mostly across.
+    const PA=vilArtFor(octOf(wc,ws), u.id&1);
     if(PA&&PA.s){
       const img=PA.s.img, H2=S*3.1, W2=img.width*(H2/img.height);
       const GT=isoGait(u.bob,moving,S,0);
@@ -10848,7 +10862,7 @@ function drawIsoUnit(u,x,y){
     }
   }
   if(K.beast){
-    const W8=wolfArtFor(octOf(fx,fy),(u.id>>1)%5);
+    const W8=wolfArtFor(octOf(wc,ws),(u.id>>1)%5);
     if(W8&&W8.s){
       const img=W8.s.img;
       const H2=S*2.05, W2=img.width*(H2/img.height);
@@ -12360,8 +12374,8 @@ function drawUnit(u){
     u.lastPose=pose;
     const KK=unitKit(u.type), artU=KK.beast||KK.person;
     const bs=unitSprite(u.type,u.owner,pose,
-                        artU?1:(Math.cos(u.face)<0?-1:1),
-                        artU?((KK.beast?(u.id>>1)%5:(u.id&1))|(octOf(Math.cos(u.face),Math.sin(u.face))<<3)):0);
+                        artU?1:(Math.cos(u.vface!=null?u.vface:u.face)<0?-1:1),
+                        artU?((KK.beast?(u.id>>1)%5:(u.id&1))|(octOf(Math.cos(u.vface!=null?u.vface:u.face),Math.sin(u.vface!=null?u.vface:u.face))<<3)):0);
     const lean=u.lean||0;
     if(Math.abs(lean)>0.012){                     // he leans into the turn
       ctx.save();

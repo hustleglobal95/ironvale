@@ -230,6 +230,16 @@ four baked walk poses rock through the same arc, and the whole gait is a
 pure function of the stride clock, so the tests can hold it to account
 without taking a screenshot.
 
+And a figure faces where his feet are taking him, not where his orders
+point. The body is drawn from its own heading - one that follows the actual
+velocity whenever the unit is genuinely underway and settles back onto the
+ordered facing when he stops - and the compass slot is picked from the world
+heading in both renderers, so a man marching east wears the east profile in
+the isometric view too, instead of the three-quarter view that made a whole
+march read as walking sideways. The wolf's profile pack is painted running
+east, and the mirror now serves the west, which is the way round that
+matches the paint.
+
 The Town Center is the largest painting in the game: the seat of the
 settlement in four true quarter-turns, a two-storey hall with a bell tower
 over a paved plaza that carries its own furniture - well, benches, lamps and
@@ -292,9 +302,9 @@ The pack then got its compass. A second sheet supplied the honest approaches
 — running at the viewer, running away, and away to the right, each in more
 than one coat — and the picture now follows the heading: eight octants, with
 south, north and north-east served by their own paintings, north-west by the
-north-east mirrored, the lateral run by the profile pack, and east by its
-mirror. The bake keys on coat and octant together, so a wolf that turns is a
-new picture, not a squashed old one.
+north-east mirrored, the eastward run by the profile pack - which is painted
+running east - and the west by its mirror. The bake keys on coat and octant
+together, so a wolf that turns is a new picture, not a squashed old one.
 
 **The Concord Exchange.** One neutral marketplace stands in every valley,
 placed by the map generator in the middle ground, well clear of every seat.
