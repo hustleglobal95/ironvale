@@ -221,6 +221,15 @@ health bar were always live overlays and still are, and the crown arrives as
 a waist sash over the picture. The seven villager trades keep their drawn
 figures and their tools, because a woodcutter is his axe at this scale.
 
+A painting cannot swing its legs, so a walking painting moves the way a
+walker's whole body does: a pendulum rock about the feet and a rise on every
+footfall, two beats to the stride, driven off the same stride clock as the
+footstep dust - and the wolf canters deeper and pitches harder than the
+villager walks. Standing figures hold dead still, the classic renderer's
+four baked walk poses rock through the same arc, and the whole gait is a
+pure function of the stride clock, so the tests can hold it to account
+without taking a screenshot.
+
 The Town Center is the largest painting in the game: the seat of the
 settlement in four true quarter-turns, a two-storey hall with a bell tower
 over a paved plaza that carries its own furniture - well, benches, lamps and

@@ -10781,6 +10781,16 @@ function isoDmgState(b){
    Drawn live, not baked: a figure is a couple of dozen strokes, and baking
    every heading for every type, owner and pose is a cache nobody needs. */
 const ISO_CLS={vil:1, inf:1, arch:1, cav:1, king:1};
+// The walk, for a painting. A single authored view cannot swing its legs, so
+// the gait is the whole body's: a pendulum rock about the feet and a rise on
+// every footfall - two beats a stride, the way a walker's head actually
+// travels. Pure function of the stride clock, so it can be held to account.
+function isoGait(bob,moving,S,beast){
+  if(!moving) return {dy:0, rot:0};
+  const sn=Math.sin(bob), bb=Math.abs(sn);
+  return beast? {dy:-bb*S*0.26, rot:sn*0.115}
+              : {dy:-bb*S*0.18, rot:sn*0.105};
+}
 function drawIsoUnit(u,x,y){
   const K=unitKit(u.type), S=UNIT[u.type].r*1.35;
   const col=teamColor(u.owner);
@@ -10806,12 +10816,18 @@ function drawIsoUnit(u,x,y){
     const PA=vilArtFor(octOf(fx,fy), u.id&1);
     if(PA&&PA.s){
       const img=PA.s.img, H2=S*3.1, W2=img.width*(H2/img.height);
+      const GT=isoGait(u.bob,moving,S,0);
       ctx.save();
-      ctx.translate(gx, gy);
+      ctx.translate(gx, gy+GT.dy);
       if(PA.fl) ctx.scale(-1,1);
-      ctx.rotate(moving?Math.sin(u.bob)*0.04:0);
+      ctx.rotate(GT.rot);
       ctx.drawImage(img, -W2*0.5, -H2*0.985, W2, H2);
       ctx.restore();
+      // Dust comes off the moment a foot plants, in this view as in the other.
+      const fp=((u.bob*0.42)|0)&3;
+      if(moving&&fp!==u.lastPose&&(fp&1)&&puffs.length<240)
+        puffs.push({x:u.x-(u.vx||0)*0.05, y:u.y, t:0.45, r:2.6+rnd()*2.6});
+      u.lastPose=fp;
       ctx.fillStyle=col;
       ctx.fillRect(gx-S*0.28, gy-S*1.5, S*0.56, S*0.22);
       if(u.carry>0){
@@ -10836,12 +10852,17 @@ function drawIsoUnit(u,x,y){
     if(W8&&W8.s){
       const img=W8.s.img;
       const H2=S*2.05, W2=img.width*(H2/img.height);
+      const GT=isoGait(u.bob,moving,S,1);
       ctx.save();
-      ctx.translate(gx, gy);
-      ctx.rotate((moving?Math.sin(u.bob)*0.05:0)+(lunge?-0.10:0));
+      ctx.translate(gx, gy+GT.dy);
+      ctx.rotate(GT.rot+(lunge?-0.10:0));
       if(W8.fl) ctx.scale(-1,1);           // a mirrored heading
       ctx.drawImage(img, -W2*0.5, -H2*0.94, W2, H2);
       ctx.restore();
+      const fp=((u.bob*0.42)|0)&3;
+      if(moving&&fp!==u.lastPose&&(fp&1)&&puffs.length<240)
+        puffs.push({x:u.x-(u.vx||0)*0.05, y:u.y, t:0.45, r:2.6+rnd()*2.6});
+      u.lastPose=fp;
       ctx.fillStyle=col;                   // collar
       ctx.beginPath(); ctx.arc(gx+fx*S*0.7, gy-S*0.95, S*0.17, 0, 6.283); ctx.fill();
       if(u.flash>0){
@@ -11657,8 +11678,8 @@ function unitFigure(g,type,owner,x,top,pose,dir,vr){
       g.save();
       g.translate(x, gnd);
       if(PA.fl) g.scale(-1,1);
-      g.rotate(SW*0.045 - lunge*0.08);             // the walk and the swing
-      g.drawImage(img, -W2*0.5, -H2*0.99+lift*1.1, W2, H2);
+      g.rotate(SW*0.095 - lunge*0.08);             // the walk and the swing
+      g.drawImage(img, -W2*0.5, -H2*0.99+lift*2.4, W2, H2);
       g.restore();
       g.fillStyle=col;                             // the crown, as a waist sash
       g.fillRect(x-S*0.30, gnd-S*1.55, S*0.60, S*0.24);
@@ -11675,8 +11696,8 @@ function unitFigure(g,type,owner,x,top,pose,dir,vr){
       g.save();
       g.translate(x+lg, gnd);
       if(W8.fl) g.scale(-1,1);             // a mirrored heading
-      g.rotate(SW*0.055 - lunge*0.10);     // the canter and the pounce
-      g.drawImage(img, -W2*0.5, -H2*0.97+lift*1.2, W2, H2);
+      g.rotate(SW*0.105 - lunge*0.10);     // the canter and the pounce
+      g.drawImage(img, -W2*0.5, -H2*0.97+lift*2.6, W2, H2);
       g.restore();
       g.fillStyle=col;                     // the pack's cloth collar
       g.fillRect(x+lg-S*0.1, gnd-S*1.26, S*0.2, S*0.4);
