@@ -112,6 +112,7 @@ window.__IV={
   vface:(u)=>u.vface!=null?u.vface:u.face,
   s8:(k)=>{ let ok2=1; for(let i=0;i<8;i++){ const a=artOf(k,i); ok2=ok2&&a&&a.ok; } return !!ok2; },
   plotSpr:(b)=>{ const sp=isoPlotSprite(b); return sp; },
+  treeA:(v)=>treeArtSprite(v|0),
   vArt:()=>{ let ok2=1; for(let i=0;i<5;i++){ const a=artOf('vilm',i),b2=artOf('vilf',i);
     ok2=ok2&&a&&a.ok&&b2&&b2.ok; } return !!ok2; },
   v8:(o,f)=>{ const r=vilArtFor(o|0,f|0); return r&&r.s? {ok:1,fl:r.fl}:{ok:0}; },

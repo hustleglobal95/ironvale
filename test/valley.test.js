@@ -331,6 +331,33 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and the valley is louder with a dog in it (' + bark.quiet + ' -> ' + bark.loud + ')',
      bark.loud > bark.quiet);
 
+  // ---- the wood is painted, and it keeps the valley's season rules ---------
+  const paintedWood = await page.evaluate(async () => {
+    const g = window.__IV;
+    const BV = (1 << 6) | (1 << 7);          // kind 2 (broadleaf), species 1, size 0
+    const CV = 0;                            // kind 0 (conifer), size 0
+    const t0 = Date.now();
+    while (Date.now() - t0 < 9000) {
+      g.setSeason(1);
+      const a = g.treeA(BV); g.setSeason(2); const b2 = g.treeA(BV);
+      g.setSeason(3); const c = g.treeA(CV); g.setSeason(1); const d2 = g.treeA(CV);
+      if (a && b2 && c && d2) break;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    const d = (A, B) => { let n = 0;
+      for (let i = 0; i < Math.min(A.length, B.length); i += 4)
+        if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) > 30) n++;
+      return n; };
+    g.setSeason(1); const bSummer = g.px(g.treeA(BV)), cSummer = g.px(g.treeA(CV));
+    g.setSeason(2); const bAutumn = g.px(g.treeA(BV)), cAutumn = g.px(g.treeA(CV));
+    g.setSeason(3); const cWinter = g.px(g.treeA(CV));
+    g.setSeason(1);
+    return { turn: d(bSummer, bAutumn), hold: d(cSummer, cAutumn), snow: d(cSummer, cWinter) };
+  });
+  ok('a painted broadleaf turns gold in autumn (' + paintedWood.turn + ' px change)', paintedWood.turn > 150);
+  ok('and a painted conifer holds its green (' + paintedWood.hold + ' px), until the snow (' +
+     paintedWood.snow + ' px)', paintedWood.hold === 0 && paintedWood.snow > 80);
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
