@@ -319,5 +319,31 @@ ok('every heading has a picture, mirrored where the sheet had none (' +
 ok('and a wolf running south is a different picture from one running west (' +
    compass.diff + ' px)', compass.diff > 150);
 
+// ---- and a painting walks: the whole body rocks and rises on the stride ----
+const gait = await page.evaluate(() => {
+  const g = window.__IV, PI = Math.PI, S = 10;
+  const a = g.gait(PI / 2, 1, S, 0);          // mid-stride, one way
+  const b2 = g.gait(3 * PI / 2, 1, S, 0);     // mid-stride, the other
+  const c = g.gait(0, 1, S, 0);               // the footfall itself
+  const still = g.gait(PI / 2, 0, S, 0);      // standing: no gait at all
+  const wolf = g.gait(PI / 2, 1, S, 1);
+  // the classic bake: the four walk poses are four genuinely different frames
+  const p1 = g.px(g.uSpr('vil', 0, 1, 1, (2 << 3) | 0));
+  const p3 = g.px(g.uSpr('vil', 0, 3, 1, (2 << 3) | 0));
+  const d = (x, y) => { let n = 0;
+    for (let i = 0; i < Math.min(x.length, y.length); i += 4)
+      if (Math.abs(x[i] - y[i]) + Math.abs(x[i + 3] - y[i + 3]) > 40) n++;
+    return n; };
+  return { rocks: a.rot > 0.05 && b2.rot < -0.05, rises: a.dy < -1 && b2.dy < -1,
+           plants: Math.abs(c.dy) < 0.01 && Math.abs(c.rot) < 0.01,
+           still: still.dy === 0 && still.rot === 0,
+           wolfDeeper: wolf.dy < a.dy && Math.abs(wolf.rot) > Math.abs(a.rot),
+           frames: d(p1, p3) };
+});
+ok('a walking painting rocks about its feet and rises on each footfall, and stands dead still when stood',
+   gait.rocks && gait.rises && gait.plants && gait.still);
+ok('the wolf canters deeper than the villager walks, and the classic bake\'s stride frames really differ (' +
+   gait.frames + ' px)', gait.wolfDeeper && gait.frames > 120);
+
 console.log('ERRORS:', errs.length?errs.join('\n'):'none');
 await b.close(); })();
