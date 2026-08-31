@@ -319,6 +319,18 @@ downscale — the dye finds the granary hangings and the gate cloth and
 touches nothing else, which is the old palette-swap mechanic applied to a
 painting.
 
+The wood is painted: six species from single summer renders - oak, beech,
+elm and birch among the broadleaves, spruce and pine for the conifers -
+spread over the forest by each tree's own hash, at eight sizes, so no two
+neighbours match. The year still turns exactly as it did, because the
+seasons were baked offline from each summer painting: fresh yellow-green
+with blossom for spring, gold for autumn, a cold grey-brown under a snow
+cap for winter - and the conifers keep their green through all of it,
+taking only the snow, because they would. The paintings ride the same
+per-season sprite purge and the same wind sway as the drawn trees they
+replace, the procedural tree stands in while a painting decodes, and the
+whole wood - six species, twenty dressings - costs 193 KB.
+
 **Wolves, bred in threes.** The barracks raises a wolf pack from the Feudal
 Age: one order, one price, three wolves. The population gate counts the whole
 litter at the queue, so a pack can never be ordered into a settlement that
