@@ -491,6 +491,64 @@ const { chromium, wrap, boot } = require('./harness');
   ok('a farm builds through the shared stages and is selected by its footprint (' +
      farmPlay.stages.join(',') + ')', farmPlay.stages.join(',') === '0,2,4' && farmPlay.picked);
 
+  // ---- a field is ground: flat, staged, and phased on the world ------------
+  const field = await page.evaluate(() => {
+    const g = window.__IV, s = g.sides()[0]; s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const p1 = g.mk(0, 'plot', tc.tx + 30, tc.ty + 30, true);
+    const p2 = g.mk(0, 'plot', tc.tx + 30, tc.ty + 32, true);   // abutting south
+    const sprs = [0, 1, 2, 3].map(st => { p1.stage = st; if (st === 3) { p1.amount = 300; p1.max = 400; } return g.plotSpr(p1); });
+    const flat = sprs.every(sp => sp.w === p1.w * 28 && sp.h === p1.h * 28);
+    const P = sprs.map(sp => g.px(sp));
+    const d = (a, b2) => { let n = 0;
+      for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+        if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 1] - b2[i + 1]) > 30) n++;
+      return n; };
+    // world phase: the abutting neighbour carries the same bands at the same
+    // local y, so the block reads as one worked field.
+    p1.stage = 1; p2.stage = 1;
+    const A = g.px(g.plotSpr(p1)), B = g.px(g.plotSpr(p2));
+    let bandDiff = 0;
+    const W2 = p1.w * 28 * 2;                          // px() reads at SPR_DPR 2
+    for (let y = 0; y < 8; y++) for (let x = 0; x < W2; x += 4){
+      const i = (y * W2 + x) * 4;
+      if (Math.abs(A[i] - B[i]) > 60) bandDiff++;
+    }
+    p1.dead = p2.dead = true;
+    return { flat, d01: d(P[0], P[1]), d13: d(P[1], P[3]), bandDiff };
+  });
+  ok('a field lies flat on the ground and walks its stages (' + field.d01 + '/' + field.d13 +
+     ' px between stages)', field.flat && field.d01 > 200 && field.d13 > 200);
+  ok('and two abutting fields share one row phase (' + field.bandDiff + ' px of band disagreement)',
+     field.bandDiff < 40);
+
+  // ---- walkers keep a hand's width from a painted building's walls ---------
+  const berth = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0]; s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const hx = tc.tx + 20, hy = tc.ty + 5;              // open meadow east of the keep
+    for (const e of g.ents())
+      if (e.kind === 'res' && Math.abs(e.x - (hx + 1) * 28) < 260 && Math.abs(e.y - (hy + 1) * 28) < 260) e.dead = true;
+    await new Promise(r => setTimeout(r, 400));
+    const h2 = g.mk(0, 'house', hx, hy, true);
+    const v = g.spawn(0, 'vil', (hx + 1) * 28, (hy + 5) * 28);
+    g.move(v, (hx + 1) * 28, (hy - 4) * 28);            // straight through the house
+    let minD = 1e9;
+    const t0 = g.t();
+    while (g.t() - t0 < 7) {
+      await new Promise(r => setTimeout(r, 60));
+      if (Math.hypot(v.vx || 0, v.vy || 0) > 10) {
+        const dx = Math.max(hx * 28 - v.x, 0, v.x - (hx + h2.w) * 28);
+        const dy = Math.max(hy * 28 - v.y, 0, v.y - (hy + h2.h) * 28);
+        minD = Math.min(minD, Math.hypot(dx, dy));
+      }
+    }
+    v.dead = true; h2.dead = true;
+    return { minD: Math.round(minD) };
+  });
+  ok('a walker gives a painted house a hand\'s width of berth (' + berth.minD + 'px clear of the footprint)',
+     berth.minD >= 12 && berth.minD < 80);
+
   // ---- selection follows the footprint, not the roof -----------------------
   const selTest = await page.evaluate(async () => {
     const g = window.__IV;
