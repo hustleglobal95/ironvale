@@ -200,5 +200,79 @@ ok('a Dark Age house is rougher than a Feudal one (' + ages.d01 + ' px)', ages.d
 ok('the Castle Age brings the masons (' + ages.d12 + ' px)', ages.d12 > 80);
 ok('and the Imperial Age finishes what they started (' + ages.d13 + ' px)', ages.d13 > ages.d12);
 
+
+// ================= the wolf pack ============================================
+// Bred in threes at the barracks: one order, one price, three wolves. The
+// population gate counts the whole litter at the queue, spears treat them as
+// the horses they run like, and a save carries them as ordinary units.
+const pack = await page.evaluate(async () => {
+  const g = window.__IV, s = g.sides()[0];
+  s.f = s.w = s.g = 9e5; s.age = 1;
+  // the suite has been raising soldiers for two minutes: make room for a litter
+  for (const e of g.ents())
+    if (e.kind === 'unit' && e.owner === 0 && e.type !== 'king' && e.cls !== 'vil') e.dead = true;
+  await new Promise(r => setTimeout(r, 300));
+  const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+  const b2 = g.mk(0, 'barracks', tc.tx + 9, tc.ty - 8, true);
+  const qBefore = g.queued(0);
+  const before = g.ents().filter(e => e.kind === 'unit' && e.type === 'wolf' && e.owner === 0 && !e.dead).length;
+  const took = g.enq(b2, 'wolf');
+  const litterQueued = g.queued(0) - qBefore;
+  b2.qt = 1e9;                                   // the litter is due
+  await new Promise(r => setTimeout(r, 600));
+  const after = g.ents().filter(e => e.kind === 'unit' && e.type === 'wolf' && e.owner === 0 && !e.dead).length;
+  return { took, litterQueued, born: after - before };
+});
+ok('one order at the barracks is a litter of three (' + pack.born + ' born, counted as ' +
+   pack.litterQueued + ' at the queue)', pack.took && pack.born === 3 && pack.litterQueued === 3);
+
+const counter = await page.evaluate(() => {
+  const g = window.__IV;
+  const wolf = g.ents().find(e => e.kind === 'unit' && e.type === 'wolf' && !e.dead);
+  if (!wolf) return { vsWolf: -1, vsMil: -1, wolfVsVil: -1 };
+  const spear = g.spawn(0, 'spear', wolf.x + 60, wolf.y);
+  const vsWolf = g.dmg(spear, wolf);
+  const militia = g.spawn(0, 'militia', wolf.x + 90, wolf.y);
+  const vsMil = g.dmg(spear, militia);
+  const v = g.spawn(0, 'vil', wolf.x + 120, wolf.y);
+  const wolfVsVil = g.dmg(wolf, v);
+  spear.dead = true; militia.dead = true; v.dead = true;
+  return { vsWolf, vsMil, wolfVsVil };
+});
+ok('a braced spear treats a wolf like a horse (' + counter.vsWolf + ', ' + counter.vsMil +
+   ' against militia)', counter.vsWolf >= counter.vsMil * 2);
+ok('and a wolf is murder on a villager caught alone (' + counter.wolfVsVil + ')',
+   counter.wolfVsVil > 6);
+
+const wolfSave = await page.evaluate(() => {
+  const g = window.__IV;
+  const n0 = g.ents().filter(e => e.kind === 'unit' && e.type === 'wolf' && !e.dead).length;
+  const snap = JSON.parse(JSON.stringify(g.snap()));
+  g.restore(snap);
+  const n1 = g.ents().filter(e => e.kind === 'unit' && e.type === 'wolf' && !e.dead).length;
+  return { n0, n1 };
+});
+ok('the pack survives a save (' + wolfSave.n0 + ' -> ' + wolfSave.n1 + ')',
+   wolfSave.n0 > 0 && wolfSave.n1 === wolfSave.n0);
+
+// ---- the wolves are the painting, in five coats ---------------------------
+await page.waitForFunction(() => [0, 1, 2, 3, 4].every(v => window.__IV.wArt(v)),
+                           null, { timeout: 8000 });
+const coats = await page.evaluate(() => {
+  const g = window.__IV;
+  const s0 = g.uSpr('wolf', 0, 1, 1, 0), s3 = g.uSpr('wolf', 0, 1, 1, 3);
+  const cached = s0 === g.uSpr('wolf', 0, 1, 1, 0);
+  const p0 = g.px(s0), p3 = g.px(s3);
+  let diff = 0, ink = 0;
+  for (let i = 0; i < Math.min(p0.length, p3.length); i += 4) {
+    if (p0[i + 3] > 60) ink++;
+    if (Math.abs(p0[i] - p3[i]) + Math.abs(p0[i + 1] - p3[i + 1]) +
+        Math.abs(p0[i + 2] - p3[i + 2]) + Math.abs(p0[i + 3] - p3[i + 3]) > 40) diff++;
+  }
+  return { cached, diff, ink };
+});
+ok('two wolves of one litter wear different coats (' + coats.diff + ' px differ, ' +
+   coats.ink + ' drawn)', coats.cached && coats.diff > 150 && coats.ink > 200);
+
 console.log('ERRORS:', errs.length?errs.join('\n'):'none');
 await b.close(); })();
