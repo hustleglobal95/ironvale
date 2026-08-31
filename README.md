@@ -211,6 +211,19 @@ the last of it is carried away and the seam goes with it. The picture is
 driven by the same number the resource bar reads, so a mine visibly gives
 out as it is worked, which no procedural rock in the game ever did.
 
+The farm came third, and brought the pipeline two things. It is the first
+authored building that is not a house, so the contract's construction
+stages, damage overlays and footprint selection were generalised to take a
+building type rather than assuming one — a farm under construction raises
+the same honest timber frame at 3×2 that a house raises at 2×2. And its art
+established the team-colour convention: anything painted in Ironvale's
+saturated cloth-blue is team colour, found by its blueness and re-dyed at
+bake time in the owner's colour with the cloth's own shading kept. About
+half a percent of the farm is cloth, and the same half-percent survives the
+downscale — the dye finds the granary hangings and the gate cloth and
+touches nothing else, which is the old palette-swap mechanic applied to a
+painting.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
