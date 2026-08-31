@@ -384,6 +384,43 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and behind the painting it still shoots (' + towerShoots.hp0 + ' -> ' + towerShoots.hp1 + ')',
      towerShoots.hp1 < towerShoots.hp0);
 
+  // ---- the town center: the seat of the settlement, in four quarter-turns --
+  await page.waitForFunction(() =>
+    [0, 1, 2, 3].every(f => !!window.__IV.aBld('tc', 'tc', f, 0)), null, { timeout: 8000 });
+  const tcArt = await page.evaluate(() => {
+    const g = window.__IV;
+    const sp = [0, 1, 2, 3].map(f => g.aBld('tc', 'tc', f, 0));
+    const onCanvas = sp.every(s2 => s2 && !!s2.art && s2.w === sp[0].w && s2.h === sp[0].h &&
+                                    s2.ox === sp[0].ox && s2.oy === sp[0].oy);
+    const flagged = sp.every(s2 => s2.fpx >= 0);
+    const smoked = [0, 1, 2, 3].every(f => g.artSm('tc', f) === 2);
+    const P = sp.map(s2 => g.px(s2));
+    const d = (a, b2) => { let n = 0;
+      for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+        if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+      return n; };
+    return { onCanvas, flagged, smoked, d01: d(P[0], P[1]), d23: d(P[2], P[3]) };
+  });
+  ok('the town center turns through four authored quarter-turns on one canvas (' +
+     tcArt.d01 + '/' + tcArt.d23 + ' px between neighbours)',
+     tcArt.onCanvas && tcArt.d01 > 400 && tcArt.d23 > 400);
+  ok('the crown flies from the bell tower and both chimneys smoke live',
+     tcArt.flagged && tcArt.smoked);
+
+  const tcWorks = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const n0 = g.ents().filter(e => e.kind === 'unit' && e.owner === 0 && e.type === 'vil' && !e.dead).length;
+    const okq = g.enq(tc, 'vil');
+    const t0 = g.t();
+    await new Promise(res => { const w2 = () => (g.t() - t0 > 16 ? res() : setTimeout(w2, 150)); w2(); });
+    const n1 = g.ents().filter(e => e.kind === 'unit' && e.owner === 0 && e.type === 'vil' && !e.dead).length;
+    return { okq, n0, n1 };
+  });
+  ok('and behind the painting it still raises villagers (' + tcWorks.n0 + ' -> ' + tcWorks.n1 + ')',
+     tcWorks.okq && tcWorks.n1 > tcWorks.n0);
+
   // ---- the palisade is a run: each tile picks its piece from its neighbours
   const wall = await page.evaluate(() => {
     const g = window.__IV, s = g.sides()[0];

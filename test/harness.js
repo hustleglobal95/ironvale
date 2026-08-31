@@ -106,6 +106,8 @@ window.__IV={
   exchEnt:()=>exchangeOf(), exchBuy:(o,i)=>buyFromExchange(o,i), exchTick:(dt)=>exchTick(dt),
   hitE:(a,t)=>hit(a,t), goods:()=>EXCH_GOODS.map(g2=>({id:g2.id,cost:g2.cost,stock:g2.stock})),
   wallPick:(b)=>isoWallPick(b), wallSpr:(i,f)=>isoWallSprite(i,f|0),
+  dIso:(b)=>{ try{ return drawIsoBld(b); }catch(e){ return 'ERR:'+e.message; } },
+  artSm:(k,f)=>{ const A=ART[k]; const s2=A&&A.f[f&3]; return s2&&s2.sm? s2.sm.length:0; },
   vArt:()=>{ let ok2=1; for(let i=0;i<5;i++){ const a=artOf('vilm',i),b2=artOf('vilf',i);
     ok2=ok2&&a&&a.ok&&b2&&b2.ok; } return !!ok2; },
   v8:(o,f)=>{ const r=vilArtFor(o|0,f|0); return r&&r.s? {ok:1,fl:r.fl}:{ok:0}; },
