@@ -239,7 +239,12 @@ the same sash the villagers wear, laid on the horse's chest for the knight;
 the mounted man stands a head taller than the foot soldiers and canters
 with the wolf's deeper gait. Behind the paintings nothing moved: the
 counter table, the upgrade lines and every order work exactly as they did,
-and the swing streaks still fly off the same weapon arithmetic.
+and the swing streaks still fly off the same weapon arithmetic. The archer
+joined them by a different road: his sheet was the first generated from the
+project's own asset profiles (docs/ASSET_PROFILES.md) - the master style
+block and turntable contract pasted into a generator, the result imported
+by the same pipeline with nothing changed - which makes the profiles a
+proven recipe rather than a hope.
 
 And a figure faces where his feet are taking him, not where his orders
 point. The body is drawn from its own heading - one that follows the actual
