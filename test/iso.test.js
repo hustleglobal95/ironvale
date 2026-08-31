@@ -348,6 +348,42 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and its cloth is re-dyed per crown, not its timber (' + farm.dyed + ' of ' +
      farm.total + ' px)', farm.dyed > 40 && farm.dyed < farm.total * 0.05);
 
+  // ---- the watchtower: four true quarter-turns, and it still shoots --------
+  await page.waitForFunction(() =>
+    [0, 1, 2, 3].every(f => !!window.__IV.aBld('tower', 'tower', f, 0)), null, { timeout: 8000 });
+  const towerArt = await page.evaluate(() => {
+    const g = window.__IV;
+    const sp = [0, 1, 2, 3].map(f => g.aBld('tower', 'tower', f, 0));
+    const onCanvas = sp.every(s2 => s2 && !!s2.art && s2.w === sp[0].w && s2.h === sp[0].h &&
+                                    s2.ox === sp[0].ox && s2.oy === sp[0].oy);
+    const P = sp.map(s2 => g.px(s2));
+    const d = (a, b2) => { let n = 0;
+      for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+        if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+      return n; };
+    return { onCanvas, d01: d(P[0], P[1]), d23: d(P[2], P[3]) };
+  });
+  ok('the watchtower turns through four authored quarter-turns on one canvas (' +
+     towerArt.d01 + '/' + towerArt.d23 + ' px between neighbours)',
+     towerArt.onCanvas && towerArt.d01 > 400 && towerArt.d23 > 400);
+
+  const towerShoots = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const tw = g.mk(0, 'tower', tc.tx - 12, tc.ty + 2, true);
+    const foe = g.spawn(1, 'militia', tw.x + 80, tw.y);
+    foe.task = 'hold';
+    const hp0 = foe.hp;
+    const t0 = g.t();
+    await new Promise(res => { const w2 = () => (g.t() - t0 > 4 ? res() : setTimeout(w2, 120)); w2(); });
+    const hp1 = foe.hp;
+    foe.dead = true;
+    return { hp0, hp1: Math.round(hp1) };
+  });
+  ok('and behind the painting it still shoots (' + towerShoots.hp0 + ' -> ' + towerShoots.hp1 + ')',
+     towerShoots.hp1 < towerShoots.hp0);
+
   const farmPlay = await page.evaluate(async () => {
     const g = window.__IV, s = g.sides()[0];
     s.f = s.w = s.g = 9e6;
@@ -375,6 +411,12 @@ const { chromium, wrap, boot } = require('./harness');
   const selTest = await page.evaluate(() => {
     const g = window.__IV;
     const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
+    // the documented pick-stealing flake: a wanderer standing on the house
+    // wins the screen-space pick. The subject is the footprint, so clear it.
+    for (const e of g.ents())
+      if (e.kind === 'unit' && !e.dead && e.type !== 'king' &&
+          Math.abs(e.x - (h.tx + h.w / 2) * 28) < 120 && Math.abs(e.y - (h.ty + h.h / 2) * 28) < 120)
+        e.dead = true;
     const centre = g.scr((h.tx + h.w / 2) * 28, (h.ty + h.h / 2) * 28);
     const roof = { x: centre.x, y: centre.y - 74 };        // in the picture, above the footprint
     const pickC = g.pickH(centre.x, centre.y);
