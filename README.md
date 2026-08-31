@@ -224,6 +224,19 @@ downscale — the dye finds the granary hangings and the gate cloth and
 touches nothing else, which is the old palette-swap mechanic applied to a
 painting.
 
+**Wolves, bred in threes.** The barracks raises a wolf pack from the Feudal
+Age: one order, one price, three wolves. The population gate counts the whole
+litter at the queue, so a pack can never be ordered into a settlement that
+cannot hold it. A wolf is fast, cheap, unarmoured cavalry in the counter
+table's eyes — braced spears treat it exactly like a horse — and it is murder
+on a villager caught alone in a field. A howl is rung when a litter comes off
+the yard: one long synthesised vowel under a slow vibrato, the opposite of a
+bark. The wolves themselves are a painting: five coats cut from one piece of
+authored art, carried as data URIs, each wolf in a litter wearing the coat
+its id deals it, mirrored to face the way it is actually going, with the
+crown riding as a cloth collar drawn over the picture. A drawn wolf stands in
+for the instant the painting takes to decode.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
