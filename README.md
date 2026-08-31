@@ -211,6 +211,14 @@ the last of it is carried away and the seam goes with it. The picture is
 driven by the same number the resource bar reads, so a mine visibly gives
 out as it is worked, which no procedural rock in the game ever did.
 
+The watchtower brought the first true quarter-turns: four authored facings
+of the same building, with the ladder, the hoist and the stores walking
+round it as it faces, chosen by About Face like the house's. The crown flies
+from the mast above the top torch, and the painted torches carry live light
+— three small breathing glows on their own phases, drawn over the bake the
+way every flame in the game is drawn over its building. Behind the painting
+the tower is untouched: it still shoots, still garrisons five, still burns.
+
 The farm came third, and brought the pipeline two things. It is the first
 authored building that is not a house, so the contract's construction
 stages, damage overlays and footprint selection were generalised to take a
