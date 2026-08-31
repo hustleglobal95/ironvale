@@ -269,6 +269,24 @@ building in the game should never be a still. Behind the painting nothing
 moved: it trains, drops off, garrisons, advances the ages and falls exactly
 as it did.
 
+In the isometric view a field is ground, not a billboard: each crop plot is
+drawn flat on the terrain in the ground pass, in the steading's own language
+- the apron's soil, the apron's ridge-and-furrow pitch, the apron's tufted
+rows - and every row and tuft is phased on WORLD coordinates, so a block of
+fields continues across its seams mid-row and runs up to the painted yard
+as one piece of worked ground. The stages still walk: broken earth, shoots,
+buds, standing gold, and stubble advancing row by row as the harvest is
+taken in, with the winter wash laid over the lot.
+
+Painted buildings sit in the grass now rather than on it: a seat of worn
+earth pools under every one, drawn in the ground pass beneath the shadow
+layers, so the ground itself admits something heavy has stood there a
+while. And walkers give a painted building's walls a hand's width of berth
+- the standoff is cosmetic and applies only to units genuinely underway, so
+placement, ranges, drop-off distances and anyone standing their ground are
+untouched; the fix also closed a real bug where the collision's detection
+and resolution disagreed about the margin.
+
 The First Age palisade is a kit, not a building: a run is drag-laid tile by
 tile, and each tile picks its piece from its neighbours - a tile-wide slice
 of four pickets for a straight (its mirror serving the other axis, and the

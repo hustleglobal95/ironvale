@@ -3259,16 +3259,21 @@ function updateUnit(u,dt){
   // Resolve only the DEEPEST overlap. A wall is a row of separate 1x1 buildings whose
   // padded rects overlap, so resolving every one of them per frame makes them fight
   // each other and the unit never moves.
-  let hitB=null, depth=0, nx=0, ny=0;
+  let hitB=null, depth=0, nx=0, ny=0, hitM=0;
   lists();
   for(const b of (isShip(u)?[]:bldCache)){
     if(b.dead) continue;
     if(b.type==='gate'&&!b.building&&b.owner===u.owner) continue;   // your own gates open
-    const l=b.tx*TILE-u.r, r2=(b.tx+b.w)*TILE+u.r, t=b.ty*TILE-u.r, bo=(b.ty+b.h)*TILE+u.r;
+    // A painted building is bigger than its tiles - eaves, stockade posts, a
+    // porch - so walkers keep a hand's width more distance from it than the
+    // bare footprint asks. Cosmetic standoff only: placement, ranges and
+    // drop-off distances all still measure to the true footprint.
+    const M=(ISOBLD[b.type]&&b.type!=='gate'&&Math.hypot(u.vx||0,u.vy||0)>10)?6:0;
+    const l=b.tx*TILE-u.r-M, r2=(b.tx+b.w)*TILE+u.r+M, t=b.ty*TILE-u.r-M, bo=(b.ty+b.h)*TILE+u.r+M;
     if(u.x>l&&u.x<r2&&u.y>t&&u.y<bo){
       const dl=u.x-l, dr=r2-u.x, dt2=u.y-t, db=bo-u.y, m=Math.min(dl,dr,dt2,db);
       if(m>depth){
-        depth=m; hitB=b;
+        depth=m; hitB=b; hitM=M;
         if(m===dl){ nx=-1; ny=0; } else if(m===dr){ nx=1; ny=0; }
         else if(m===dt2){ nx=0; ny=-1; } else { nx=0; ny=1; }
       }
@@ -3298,8 +3303,8 @@ function updateUnit(u,dt){
   }
 
   if(hitB){
-    const l=hitB.tx*TILE-u.r, r2=(hitB.tx+hitB.w)*TILE+u.r;
-    const t=hitB.ty*TILE-u.r, bo=(hitB.ty+hitB.h)*TILE+u.r;
+    const l=hitB.tx*TILE-u.r-hitM, r2=(hitB.tx+hitB.w)*TILE+u.r+hitM;
+    const t=hitB.ty*TILE-u.r-hitM, bo=(hitB.ty+hitB.h)*TILE+u.r+hitM;
     const ox2=u.x, oy2=u.y;
     if(nx<0) u.x=l; else if(nx>0) u.x=r2; else if(ny<0) u.y=t; else u.y=bo;
     if(!passable(u,u.x,u.y)){ u.x=ox2; u.y=oy2; }        // never shove anyone off their element
@@ -7324,12 +7329,24 @@ function draw(){
     // building shadows: a soft pool thrown along +x in world space, which is
     // exactly screen lower-right once projected
     for(const b of bldCache){
-      if(b.dead||b.type==='plot') continue;
+      if(b.dead) continue;
       if(b.owner!==PLAYER && !knows(b)) continue;
       if(!onScreen(b.x,b.y,300)) continue;
       const bw=b.w*TILE, bh=b.h*TILE;
+      if(b.type==='plot'){
+        // A field is ground. Drawn here, under the transform and before
+        // anything that stands, it meets its neighbours and the steading's
+        // yard edge to edge - the block reads as one worked field.
+        const fp=isoPlotSprite(b);
+        if(b.building) ctx.globalAlpha=0.35+0.6*Math.min(1,b.prog/Math.max(1,b.buildTime));
+        ctx.drawImage(fp.c, b.tx*TILE, b.ty*TILE, bw, bh);
+        if(b.building) ctx.globalAlpha=1;
+        continue;
+      }
       if(ISOBLD[b.type]){
-        // the asset's own shadow layer, deepening as the building goes up
+        // the seat first, then the asset's own shadow layer
+        const st2=isoSeatSprite(b.type);
+        ctx.drawImage(st2.c, b.tx*TILE-st2.ox, b.ty*TILE-st2.oy, st2.w, st2.h);
         const sh=isoShadowSprite(b.type);
         ctx.globalAlpha=b.building?0.25+0.75*Math.min(1,b.prog/Math.max(1,b.buildTime)):1;
         ctx.drawImage(sh.c, b.tx*TILE-sh.ox+bw*0.16, b.ty*TILE-sh.oy+bh*0.05, sh.w, sh.h);
@@ -9857,6 +9874,104 @@ function isoPoly(g,pts){ g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
 
 // ---- the shadow layer: authored in WORLD space, drawn by the ground pass
 // through the projection, so it always lies on the ground and under everything
+function isoPlotSprite(b){
+  // The field speaks the steading's own language: the apron's soil, the
+  // apron's ridge-and-furrow pitch, the apron's tufted rows - phased on
+  // WORLD coordinates, so a field continues its neighbour mid-row and runs
+  // up to the painted yard as one piece of worked ground.
+  const w=b.w*TILE, h=b.h*TILE, pk=b.building?0:farmVariant(b);
+  const wx0=b.tx*TILE, wy0=b.ty*TILE;
+  const crop=CROP[(pk/FIELD_STATES|0)%CROP.length], code=pk%FIELD_STATES;
+  const stage=code<3?code:3, cut=code<3?0:(code-3)/4;
+  return sprite('IP:'+pk+':'+wx0+','+wy0+':'+w+'x'+h+(seasonNow===3?':w':''), w, h, g=>{
+    g.fillStyle='#8A6636'; g.fillRect(0,0,w,h);
+    const gp=grainPat(g,'turf',64,9,GRAIN_DARK,GRAIN_LIGHT,0.18);
+    if(gp){ g.fillStyle=gp; g.fillRect(0,0,w,h); }
+    const rowH=TILE*0.5;
+    for(let y=0;y<h;y+=rowH){
+      g.fillStyle='rgba(46,32,18,.30)';    g.fillRect(0, y,           w, rowH*0.34);
+      g.fillStyle='rgba(166,126,70,.50)';  g.fillRect(0, y+rowH*0.34, w, rowH*0.40);
+      g.fillStyle='rgba(226,196,140,.26)'; g.fillRect(0, y+rowH*0.40, w, 1);
+    }
+    if(stage===0){                          // broken ground: clods, nothing up
+      g.fillStyle='rgba(96,72,40,.5)';
+      for(let i=0;i<Math.max(10,(w*h/560)|0);i++){
+        const hx=(((wx0+i*37)*2654435761)^(wy0*19349663))>>>0;
+        g.fillRect(1+(hx%(w-4)), 2+((hx>>9)%(h-5)), 2.6, 1.8);
+      }
+      return;
+    }
+    const t=stage===1?0.34:stage===2?0.68:1;
+    const rows=(h/rowH)|0, cutRows=cut*rows;
+    for(let ri=0;ri<rows;ri++){
+      const y=ri*rowH+rowH*0.62;
+      const wr=((wy0/rowH)|0)+ri;           // the row's WORLD index
+      const done=ri<Math.floor(cutRows);
+      const partial=!done&&ri===Math.floor(cutRows)?(cutRows%1):1;
+      const stagger=(wr&1)?TILE*0.24:0;
+      // march columns in world-x so the pattern crosses the seam untouched
+      for(let wxc=Math.ceil((wx0-stagger)/(TILE*0.5))*(TILE*0.5)+stagger+TILE*0.34;
+          wxc<wx0+w; wxc+=TILE*0.5){
+        const x=wxc-wx0; if(x<1||x>w-1) continue;
+        const hx=((wr*73856093)^((wxc|0)*19349663))>>>0;
+        const jx=x+((hx>>3)%3)-1, jy=y+((hx>>7)%2);
+        const stub=done||(partial<1&&((wxc/(TILE*0.5))%1===0?((hx>>5)&7)/8:(x/w))<(1-partial));
+        if(stub){                           // taken in: straw stubble
+          g.strokeStyle='rgba(178,150,92,.85)'; g.lineWidth=1.1;
+          g.beginPath(); g.moveTo(jx, jy+1.4); g.lineTo(jx, jy-1.4); g.stroke();
+          continue;
+        }
+        g.fillStyle=skyShade(.24);
+        g.beginPath(); g.ellipse(jx+1, jy+1.4, 2.6+t*1.2, 1.1, 0, 0, 6.283); g.fill();
+        g.strokeStyle=crop.stalk; g.lineWidth=1.5; g.lineCap='round';
+        const H2=2.6+t*4.6;
+        for(let bl=-1;bl<=1;bl++){
+          const lean=bl*(1.4+t*1.0)+(((hx>>(5+(bl&3)))&3)-1.5)*0.5;
+          g.beginPath();
+          g.moveTo(jx, jy+1.2);
+          g.quadraticCurveTo(jx+lean*0.5, jy-H2*0.5, jx+lean, jy-H2);
+          g.stroke();
+        }
+        g.lineCap='butt';
+        if(stage===3){
+          g.fillStyle=crop.ear;
+          for(let bl=-1;bl<=1;bl++){
+            const lean=bl*2.4;
+            g.beginPath(); g.ellipse(jx+lean, jy-H2-0.8, 1.2, 2.0, 0, 0, 6.283); g.fill();
+          }
+        } else if(stage===2&&((hx>>11)&3)===0){
+          g.fillStyle='rgba(150,178,96,.7)';
+          g.beginPath(); g.arc(jx, jy-H2, 1.2, 0, 6.283); g.fill();
+        } else {
+          g.fillStyle='rgba(150,190,96,.55)';
+          g.beginPath(); g.ellipse(jx, jy+0.5, 1.4, 0.9, 0, 0, 6.283); g.fill();
+        }
+      }
+    }
+    if(stage===3&&cut<0.2){
+      g.fillStyle='rgba(255,238,170,.10)'; g.fillRect(0,0,w,h);
+    }
+    if(seasonNow===3){
+      g.globalCompositeOperation='source-atop';
+      g.fillStyle='rgba(238,242,247,.28)'; g.fillRect(0,0,w,h);
+      g.globalCompositeOperation='source-over';
+    }
+  }, {ox:0, oy:0});
+}
+// The seat: a soft pool of worn earth under a painted building, drawn in the
+// ground pass so the painting stands IN the grass rather than on it.
+function isoSeatSprite(type){
+  const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE, pad=18;
+  return sprite('IH:seat:'+type, bw+pad*2, bh+pad*2, g=>{
+    const gr=g.createRadialGradient(pad+bw/2,pad+bh/2, Math.min(bw,bh)*0.18,
+                                    pad+bw/2,pad+bh/2, Math.max(bw,bh)*0.72);
+    gr.addColorStop(0,'rgba(122,96,58,.34)');
+    gr.addColorStop(0.62,'rgba(122,96,58,.16)');
+    gr.addColorStop(1,'rgba(122,96,58,0)');
+    g.fillStyle=gr;
+    g.fillRect(0,0,bw+pad*2,bh+pad*2);
+  }, {ox:pad, oy:pad});
+}
 function isoShadowSprite(type){
   const d=BLD[type], bw=d.w*TILE, bh=d.h*TILE, pad=26;
   return sprite('IH:shadow:'+type, bw+pad*2, bh+pad*2, g=>{
@@ -11169,6 +11284,21 @@ function drawBld(b){
   // nor buries. Converted types take over below, one at a time.
   let px,py;
   if(ISO.on){
+    if(b.type==='plot'){
+      // The field itself is drawn in the ground pass. Here: only what
+      // stands above ground - the selection diamond and the ripe bar.
+      const C0=scr(b.tx*TILE, b.ty*TILE);
+      if(sel.includes(b)){
+        ctx.save();
+        ctx.translate(-cam.x,-cam.y);
+        ctx.transform(1,0.5,-1,0.5,0,0);
+        ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2;
+        ctx.strokeRect(b.tx*TILE-1, b.ty*TILE-1, b.w*TILE+2, b.h*TILE+2);
+        ctx.restore();
+      }
+      if(b.stage===3) resBar(C0.x, C0.y-6, b.amount/Math.max(1,b.max), '#B8562F');
+      return;
+    }
     if(b.type==='palisade'&&drawIsoWall(b)) return;
     if(ISOBLD[b.type]&&drawIsoBld(b)) return;
     const C=scr(b.x, b.y);
