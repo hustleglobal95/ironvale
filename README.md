@@ -237,6 +237,14 @@ its id deals it, mirrored to face the way it is actually going, with the
 crown riding as a cloth collar drawn over the picture. A drawn wolf stands in
 for the instant the painting takes to decode.
 
+The pack then got its compass. A second sheet supplied the honest approaches
+— running at the viewer, running away, and away to the right, each in more
+than one coat — and the picture now follows the heading: eight octants, with
+south, north and north-east served by their own paintings, north-west by the
+north-east mirrored, the lateral run by the profile pack, and east by its
+mirror. The bake keys on coat and octant together, so a wolf that turns is a
+new picture, not a squashed old one.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
