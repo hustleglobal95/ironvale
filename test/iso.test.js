@@ -384,6 +384,53 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and behind the painting it still shoots (' + towerShoots.hp0 + ' -> ' + towerShoots.hp1 + ')',
      towerShoots.hp1 < towerShoots.hp0);
 
+  // ---- the palisade is a run: each tile picks its piece from its neighbours
+  const wall = await page.evaluate(() => {
+    const g = window.__IV, s = g.sides()[0];
+    s.f = s.w = s.g = 9e6;
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const X = tc.tx - 14, Y = tc.ty - 6, put = (x, y) => g.mk(0, 'palisade', x, y, true);
+    const xa = put(X, Y), xb = put(X + 1, Y), xc = put(X + 2, Y);   // an x-run
+    const ya = put(X + 2, Y + 1), yb = put(X + 2, Y + 2);          // turning south
+    put(X + 1, Y + 2); put(X + 3, Y + 2); put(X + 2, Y + 3);       // a crossroads at yb
+    const lone = put(X + 6, Y + 6);
+    // the two authored corners: a run arriving from the north and leaving west,
+    // and one arriving from the east and leaving south
+    const vC = put(X + 9, Y); put(X + 8, Y); put(X + 9, Y - 1);
+    const nC = put(X + 12, Y); put(X + 13, Y); put(X + 12, Y + 1);
+    const p = e => g.wallPick(e);
+    return { mid: p(xb), turn: p(xc), v: p(vC), n: p(nC),
+             yrun: p(ya), cross: p(yb), stub: p(lone) };
+  });
+  ok('a mid-run tile is the straight slice and a side run is its mirror (' +
+     wall.mid.idx + '/' + wall.mid.flip + ', ' + wall.yrun.idx + '/' + wall.yrun.flip + ')',
+     wall.mid.idx === 0 && !wall.mid.flip && wall.yrun.idx === 0 && wall.yrun.flip === 1);
+  ok('the authored corners, the crossroads and the lone post all take their pieces (' +
+     wall.v.idx + ',' + wall.n.idx + ',' + wall.cross.idx + ',' + wall.stub.idx +
+     '; the unauthored turn composes both slices: ' + wall.turn.both + ')',
+     wall.v.idx === 1 && wall.n.idx === 2 && wall.cross.idx === 3 && wall.stub.idx === 4 &&
+     wall.turn.idx === 0 && wall.turn.both === 1);
+
+  // ---- the gate lies along its run, and only its owner walks through -------
+  const gatePass = await page.evaluate(async () => {
+    const g = window.__IV, s = g.sides()[0];
+    const tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+    const X = tc.tx + 14, Y = tc.ty - 8;
+    for (let j = -3; j <= 4; j++) if (j < 0 || j > 1) g.mk(0, 'palisade', X, Y + j, true);
+    const gate = g.mk(0, 'gate', X - 1, Y, true);           // closing a y-run
+    await new Promise(res => { const w0 = () => (g.aBld('gate', 'gate', 1, 0) ? res() : setTimeout(w0, 120)); w0(); });
+    const mirrored = !!g.aBld('gate', 'gate', 1, 0);
+    const u = g.spawn(0, 'vil', (X - 4) * 28, (Y + 1) * 28);
+    u.task = 'move'; u.tx = (X + 4) * 28; u.ty = (Y + 1) * 28;
+    const t0 = g.t();
+    await new Promise(res => { const w2 = () => (g.t() - t0 > 6.5 ? res() : setTimeout(w2, 120)); w2(); });
+    const off = Math.hypot(u.x - u.tx, u.y - u.ty);
+    u.dead = true;
+    return { off, mirrored };
+  });
+  ok('a villager passes his own gate in the wall (' + Math.round(gatePass.off) + 'px off)',
+     gatePass.off < 45 && gatePass.mirrored);
+
   const farmPlay = await page.evaluate(async () => {
     const g = window.__IV, s = g.sides()[0];
     s.f = s.w = s.g = 9e6;
@@ -408,15 +455,18 @@ const { chromium, wrap, boot } = require('./harness');
      farmPlay.stages.join(',') + ')', farmPlay.stages.join(',') === '0,2,4' && farmPlay.picked);
 
   // ---- selection follows the footprint, not the roof -----------------------
-  const selTest = await page.evaluate(() => {
+  const selTest = await page.evaluate(async () => {
     const g = window.__IV;
     const h = g.ents().filter(e => e.type === 'house' && e.owner === 0).pop();
     // the documented pick-stealing flake: a wanderer standing on the house
-    // wins the screen-space pick. The subject is the footprint, so clear it.
+    // wins the screen-space pick. The subject is the footprint, so clear it -
+    // and let the death sweep actually collect them before picking, or the
+    // stale entity cache still answers the click.
     for (const e of g.ents())
       if (e.kind === 'unit' && !e.dead && e.type !== 'king' &&
           Math.abs(e.x - (h.tx + h.w / 2) * 28) < 120 && Math.abs(e.y - (h.ty + h.h / 2) * 28) < 120)
         e.dead = true;
+    await new Promise(r => setTimeout(r, 350));
     const centre = g.scr((h.tx + h.w / 2) * 28, (h.ty + h.h / 2) * 28);
     const roof = { x: centre.x, y: centre.y - 74 };        // in the picture, above the footprint
     const pickC = g.pickH(centre.x, centre.y);

@@ -105,6 +105,10 @@ window.__IV={
     hp:b.hp,maxHp:b.maxHp,stock:b.stock.slice(),restockT:b.restockT,known:(b.known||[]).slice()} : null; },
   exchEnt:()=>exchangeOf(), exchBuy:(o,i)=>buyFromExchange(o,i), exchTick:(dt)=>exchTick(dt),
   hitE:(a,t)=>hit(a,t), goods:()=>EXCH_GOODS.map(g2=>({id:g2.id,cost:g2.cost,stock:g2.stock})),
+  wallPick:(b)=>isoWallPick(b), wallSpr:(i,f)=>isoWallSprite(i,f|0),
+  vArt:()=>{ let ok2=1; for(let i=0;i<5;i++){ const a=artOf('vilm',i),b2=artOf('vilf',i);
+    ok2=ok2&&a&&a.ok&&b2&&b2.ok; } return !!ok2; },
+  v8:(o,f)=>{ const r=vilArtFor(o|0,f|0); return r&&r.s? {ok:1,fl:r.fl}:{ok:0}; },
   uSpr:(t,o,p,d,v)=>unitSprite(t,o,p,d==null?1:d,v|0),
   hDmg:(d)=>isoHouseDmg(d), hShadow:()=>isoShadowSprite('house'), hGeo:()=>isoGeo('house'),
   hBuildStage:(b)=>isoBuildStage(b), hDmgState:(b)=>isoDmgState(b),

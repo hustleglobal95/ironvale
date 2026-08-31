@@ -291,6 +291,28 @@ const compass = await page.evaluate(async () => {
   const octs = { e: g.oct(1, 0), s: g.oct(0, 1), n: g.oct(0, -1), ne: g.oct(1, -1) };
   return { allOk, mirrors, diff, octs };
 });
+// ---- the villagers are two paintings, dealt by id -------------------------
+await page.waitForFunction(() => window.__IV.vArt(), null, { timeout: 9000 });
+const folk = await page.evaluate(() => {
+  const g = window.__IV;
+  const dirs = [0,1,2,3,4,5,6,7].map(o => g.v8(o, 0));
+  const allOk = dirs.every(d2 => d2.ok);
+  const mirrors = dirs[0].fl === 1 && dirs[1].fl === 1 && dirs[7].fl === 1 &&
+                  dirs[2].fl === 0 && dirs[4].fl === 0 && dirs[6].fl === 0;
+  const man = g.px(g.uSpr('vil', 0, 0, 1, (2 << 3) | 0));
+  const woman = g.px(g.uSpr('vil', 0, 0, 1, (2 << 3) | 1));
+  const side = g.px(g.uSpr('vil', 0, 0, 1, (4 << 3) | 0));
+  const d = (a, b2) => { let n = 0;
+    for (let i = 0; i < Math.min(a.length, b2.length); i += 4)
+      if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 1] - b2[i + 1]) +
+          Math.abs(a[i + 2] - b2[i + 2]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
+    return n; };
+  return { allOk, mirrors, mw: d(man, woman), sw: d(man, side) };
+});
+ok('every villager heading has a picture, the east half by mirror', folk.allOk && folk.mirrors);
+ok('a man and a woman of the same crown are different paintings (' + folk.mw +
+   ' px), and turning is a new picture (' + folk.sw + ' px)', folk.mw > 250 && folk.sw > 250);
+
 ok('every heading has a picture, mirrored where the sheet had none (' +
    JSON.stringify(compass.octs) + ')', compass.allOk && compass.mirrors &&
    compass.octs.e === 0 && compass.octs.s === 2 && compass.octs.n === 6 && compass.octs.ne === 7);
