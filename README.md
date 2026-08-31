@@ -221,6 +221,19 @@ health bar were always live overlays and still are, and the crown arrives as
 a waist sash over the picture. The seven villager trades keep their drawn
 figures and their tools, because a woodcutter is his axe at this scale.
 
+The Town Center is the largest painting in the game: the seat of the
+settlement in four true quarter-turns, a two-storey hall with a bell tower
+over a paved plaza that carries its own furniture - well, benches, lamps and
+notice boards, all baked. The plaza apron overhangs the 3x3 footprint a
+little, laid over the worn ground the site always had, so the building sits
+in the town rather than on it. The crown flies from the bell tower, and the
+render's baked smoke was stripped at import so the two chimneys could smoke
+live instead - three wisps a stack, risen, swayed and faded on their own
+deterministic clocks, costing no allocations at all - because the busiest
+building in the game should never be a still. Behind the painting nothing
+moved: it trains, drops off, garrisons, advances the ages and falls exactly
+as it did.
+
 The First Age palisade is a kit, not a building: a run is drag-laid tile by
 tile, and each tile picks its piece from its neighbours - a tile-wide slice
 of four pickets for a straight (its mirror serving the other axis, and the
