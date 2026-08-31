@@ -276,13 +276,14 @@ ok('two wolves of one litter wear different coats (' + coats.diff + ' px differ,
 
 // ---- and the picture follows the compass ----------------------------------
 // South, north and north-east are their own paintings; north-west is the
-// north-east mirrored; the lateral run is the profile pack, mirrored east.
+// north-east mirrored; the lateral run is the profile pack, which is painted
+// running east - the mirror serves the west.
 const compass = await page.evaluate(async () => {
   const g = window.__IV;
   await new Promise(res => { const w = () => (g.w8(2,0).ok && g.w8(6,0).ok && g.w8(7,0).ok) ? res() : setTimeout(w, 120); w(); });
   const dirs = [0,1,2,3,4,5,6,7].map(o => g.w8(o, 0));
   const allOk = dirs.every(d2 => d2.ok);
-  const mirrors = dirs[5].fl === 1 && dirs[0].fl === 1 && dirs[4].fl === 0 && dirs[2].fl === 0;
+  const mirrors = dirs[5].fl === 1 && dirs[0].fl === 0 && dirs[4].fl === 1 && dirs[2].fl === 0;
   const south = g.px(g.uSpr('wolf', 0, 1, 1, (2 << 3)));
   const west  = g.px(g.uSpr('wolf', 0, 1, 1, (4 << 3)));
   let diff = 0;
@@ -342,6 +343,23 @@ const gait = await page.evaluate(() => {
 });
 ok('a walking painting rocks about its feet and rises on each footfall, and stands dead still when stood',
    gait.rocks && gait.rises && gait.plants && gait.still);
+// ---- the drawn heading follows the feet, not the order ---------------------
+const vf = await page.evaluate(async () => {
+  const g = window.__IV, tc = g.ents().find(e => e.type === 'tc' && e.owner === 0);
+  const v = g.spawn(0, 'vil', tc.x - 150, tc.y + 250);
+  g.move(v, tc.x + 700, tc.y + 250);
+  await new Promise(res => { const w = () => (Math.hypot(v.vx || 0, v.vy || 0) > 40 ? res() : setTimeout(w, 80)); w(); });
+  v.face = Math.PI;                    // yank the order-facing west, mid-march east
+  await new Promise(r => setTimeout(r, 70));
+  const vh = Math.atan2(v.vy, v.vx);
+  const da = (a, b2) => { let d = a - b2; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
+  const drawn = da(g.vface(v), vh), order = da(v.face, vh);
+  v.dead = true;
+  return { drawn: +drawn.toFixed(2), order: +order.toFixed(2) };
+});
+ok('the drawn heading follows the feet, not the order (' + vf.drawn + ' rad off the walk; the yanked order-facing sits ' +
+   vf.order + ' rad off)', vf.drawn < 0.6 && vf.order > 1.0);
+
 ok('the wolf canters deeper than the villager walks, and the classic bake\'s stride frames really differ (' +
    gait.frames + ' px)', gait.wolfDeeper && gait.frames > 120);
 
