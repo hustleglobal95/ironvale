@@ -274,5 +274,28 @@ const coats = await page.evaluate(() => {
 ok('two wolves of one litter wear different coats (' + coats.diff + ' px differ, ' +
    coats.ink + ' drawn)', coats.cached && coats.diff > 150 && coats.ink > 200);
 
+// ---- and the picture follows the compass ----------------------------------
+// South, north and north-east are their own paintings; north-west is the
+// north-east mirrored; the lateral run is the profile pack, mirrored east.
+const compass = await page.evaluate(async () => {
+  const g = window.__IV;
+  await new Promise(res => { const w = () => (g.w8(2,0).ok && g.w8(6,0).ok && g.w8(7,0).ok) ? res() : setTimeout(w, 120); w(); });
+  const dirs = [0,1,2,3,4,5,6,7].map(o => g.w8(o, 0));
+  const allOk = dirs.every(d2 => d2.ok);
+  const mirrors = dirs[5].fl === 1 && dirs[0].fl === 1 && dirs[4].fl === 0 && dirs[2].fl === 0;
+  const south = g.px(g.uSpr('wolf', 0, 1, 1, (2 << 3)));
+  const west  = g.px(g.uSpr('wolf', 0, 1, 1, (4 << 3)));
+  let diff = 0;
+  for (let i = 0; i < Math.min(south.length, west.length); i += 4)
+    if (Math.abs(south[i] - west[i]) + Math.abs(south[i + 3] - west[i + 3]) > 40) diff++;
+  const octs = { e: g.oct(1, 0), s: g.oct(0, 1), n: g.oct(0, -1), ne: g.oct(1, -1) };
+  return { allOk, mirrors, diff, octs };
+});
+ok('every heading has a picture, mirrored where the sheet had none (' +
+   JSON.stringify(compass.octs) + ')', compass.allOk && compass.mirrors &&
+   compass.octs.e === 0 && compass.octs.s === 2 && compass.octs.n === 6 && compass.octs.ne === 7);
+ok('and a wolf running south is a different picture from one running west (' +
+   compass.diff + ' px)', compass.diff > 150);
+
 console.log('ERRORS:', errs.length?errs.join('\n'):'none');
 await b.close(); })();

@@ -99,6 +99,8 @@ window.__IV={
   enq:(b,t)=>enqueue(b,t), queued:(o)=>queuedOf(o), dmg:(a,b2)=>damageOf(a,b2),
   howl:()=>{ SFX.howl&&SFX.howl(); return !!SFX.howl; },
   wArt:(v)=>{ const s2=artOf('wolf',v|0); return !!(s2&&s2.ok); },
+  w8:(o,c)=>{ const r=wolfArtFor(o|0,c|0); return r&&r.s? {ok:1,fl:r.fl} : {ok:0}; },
+  oct:(x2,y2)=>octOf(x2,y2),
   uSpr:(t,o,p,d,v)=>unitSprite(t,o,p,d==null?1:d,v|0),
   hDmg:(d)=>isoHouseDmg(d), hShadow:()=>isoShadowSprite('house'), hGeo:()=>isoGeo('house'),
   hBuildStage:(b)=>isoBuildStage(b), hDmgState:(b)=>isoDmgState(b),
