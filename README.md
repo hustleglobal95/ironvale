@@ -230,6 +230,17 @@ four baked walk poses rock through the same arc, and the whole gait is a
 pure function of the stride clock, so the tests can hold it to account
 without taking a screenshot.
 
+The soldiery is painted now too: the man-at-arms (the whole militia line
+fights under his shield), the spearman and the knight, each authored as a
+full turntable - eight honest views, no mirrors, stored in octant order so
+the compass indexes straight into the sheet. Their baked ground shadows
+were stripped at import because the game throws its own; the crown rides as
+the same sash the villagers wear, laid on the horse's chest for the knight;
+the mounted man stands a head taller than the foot soldiers and canters
+with the wolf's deeper gait. Behind the paintings nothing moved: the
+counter table, the upgrade lines and every order work exactly as they did,
+and the swing streaks still fly off the same weapon arithmetic.
+
 And a figure faces where his feet are taking him, not where his orders
 point. The body is drawn from its own heading - one that follows the actual
 velocity whenever the unit is genuinely underway and settles back onto the
