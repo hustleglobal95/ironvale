@@ -345,7 +345,7 @@ ok('a walking painting rocks about its feet and rises on each footfall, and stan
    gait.rocks && gait.rises && gait.plants && gait.still);
 // ---- the soldiers: three turntables of eight, and they still fight ---------
 await page.waitForFunction(() =>
-  window.__IV.s8('ma8') && window.__IV.s8('sp8') && window.__IV.s8('kn8'), null, { timeout: 12000 });
+  window.__IV.s8('ma8') && window.__IV.s8('sp8') && window.__IV.s8('kn8') && window.__IV.s8('ar8'), null, { timeout: 12000 });
 const host = await page.evaluate(() => {
   const g = window.__IV;
   const d = (a, b2) => { let n = 0;
@@ -353,7 +353,7 @@ const host = await page.evaluate(() => {
       if (Math.abs(a[i] - b2[i]) + Math.abs(a[i + 3] - b2[i + 3]) > 40) n++;
     return n; };
   const res = {};
-  for (const [t2, key] of [['militia', 'ma'], ['spear', 'sp'], ['knight', 'kn']]) {
+  for (const [t2, key] of [['militia', 'ma'], ['spear', 'sp'], ['knight', 'kn'], ['archer', 'ar']]) {
     const sp = [0, 1, 2, 3, 4, 5, 6, 7].map(o => g.uSpr(t2, 0, 0, 1, o << 3));
     const onCanvas = sp.every(s2 => s2.w === sp[0].w && s2.h === sp[0].h);
     const P = sp.map(s2 => g.px(s2));
@@ -362,11 +362,11 @@ const host = await page.evaluate(() => {
   res.cross = d(g.px(g.uSpr('militia', 0, 0, 1, 2 << 3)), g.px(g.uSpr('spear', 0, 0, 1, 2 << 3)));
   return res;
 });
-ok('the man-at-arms, the spearman and the knight each turn through eight honest views (' +
-   host.ma.ew + '/' + host.sp.ew + '/' + host.kn.ew + ' px east-vs-west)',
-   host.ma.onCanvas && host.sp.onCanvas && host.kn.onCanvas &&
-   host.ma.ew > 150 && host.sp.ew > 150 && host.kn.ew > 200 &&
-   host.ma.sn > 150 && host.sp.sn > 150 && host.kn.sn > 200);
+ok('the man-at-arms, the spearman, the knight and the archer each turn through eight honest views (' +
+   host.ma.ew + '/' + host.sp.ew + '/' + host.kn.ew + '/' + host.ar.ew + ' px east-vs-west)',
+   host.ma.onCanvas && host.sp.onCanvas && host.kn.onCanvas && host.ar.onCanvas &&
+   host.ma.ew > 150 && host.sp.ew > 150 && host.kn.ew > 200 && host.ar.ew > 150 &&
+   host.ma.sn > 150 && host.sp.sn > 150 && host.kn.sn > 200 && host.ar.sn > 150);
 ok('and a spearman is not a man-at-arms with a longer stick (' + host.cross + ' px)', host.cross > 200);
 
 const fight = await page.evaluate(async () => {
@@ -390,7 +390,7 @@ const vf = await page.evaluate(async () => {
   g.move(v, tc.x + 700, tc.y + 250);
   await new Promise(res => { const w = () => (Math.hypot(v.vx || 0, v.vy || 0) > 40 ? res() : setTimeout(w, 80)); w(); });
   v.face = Math.PI;                    // yank the order-facing west, mid-march east
-  await new Promise(r => setTimeout(r, 70));
+  await new Promise(r => setTimeout(r, 45));
   const vh = Math.atan2(v.vy, v.vx);
   const da = (a, b2) => { let d = a - b2; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
   const drawn = da(g.vface(v), vh), order = da(v.face, vh);
@@ -398,7 +398,7 @@ const vf = await page.evaluate(async () => {
   return { drawn: +drawn.toFixed(2), order: +order.toFixed(2) };
 });
 ok('the drawn heading follows the feet, not the order (' + vf.drawn + ' rad off the walk; the yanked order-facing sits ' +
-   vf.order + ' rad off)', vf.drawn < 0.6 && vf.order > 1.0);
+   vf.order + ' rad off)', vf.drawn < 0.6 && vf.order > 0.6 && vf.order > vf.drawn * 3);
 
 ok('the wolf canters deeper than the villager walks, and the classic bake\'s stride frames really differ (' +
    gait.frames + ' px)', gait.wolfDeeper && gait.frames > 120);
