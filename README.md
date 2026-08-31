@@ -211,6 +211,27 @@ the last of it is carried away and the seam goes with it. The picture is
 driven by the same number the resource bar reads, so a mine visibly gives
 out as it is worked, which no procedural rock in the game ever did.
 
+The villagers themselves are paintings now: a man and a woman, five honest
+views each - front, three-quarter, profile, back-quarter, back - with the
+eastern half of the compass served by mirrors. Which one a villager is gets
+dealt by their id at birth: random, permanent, carried through every save,
+and never a menu. The painted body replaces only the drawn figure; the tool
+arm, the carry load riding above the shoulder, the selection ring and the
+health bar were always live overlays and still are, and the crown arrives as
+a waist sash over the picture. The seven villager trades keep their drawn
+figures and their tools, because a woodcutter is his axe at this scale.
+
+The First Age palisade is a kit, not a building: a run is drag-laid tile by
+tile, and each tile picks its piece from its neighbours - a tile-wide slice
+of four pickets for a straight (its mirror serving the other axis, and the
+two of them composed together where a turn has no authored piece), a carved
+corner nub for the south and north turns, a crossed-post junction where runs
+meet, and a stub for a post standing alone. The slice tiles seamlessly
+because the painting's own isometric descent equals the tile step, which is
+the kind of luck you arrange by measuring. The gate is one painting mirrored
+to lie along whichever axis its wall runs, chosen from its neighbours
+automatically; own units walk through it as they always did.
+
 The watchtower brought the first true quarter-turns: four authored facings
 of the same building, with the ladder, the hoist and the stores walking
 round it as it faces, chosen by About Face like the house's. The crown flies
