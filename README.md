@@ -245,6 +245,25 @@ north-east mirrored, the lateral run by the profile pack, and east by its
 mirror. The bake keys on coat and octant together, so a wolf that turns is a
 new picture, not a squashed old one.
 
+**The Concord Exchange.** One neutral marketplace stands in every valley,
+placed by the map generator in the middle ground, well clear of every seat.
+It belongs to nobody — owner −1, no crown, no pennant — and it cannot be
+built, owned, captured, hurt or pulled down: a blow simply does not land, and
+an advancing soldier walks past it without picking the fight. Its shelves
+hold six rare goods — grain, timber and bullion shipments, an ancient relic,
+masterwork arms, a mercenary company — priced in real resources, in a stock
+that is SHARED: every crown that has walked a unit past its steps may trade,
+and they all draw down the same shelves, which refill on the Exchange's own
+clock. A trade needs somebody physically at the steps; selecting the house
+shows the stock, the prices, the restock timer and whether anyone of yours is
+close enough. The other crowns shop here too — they discover it, send a
+buyer, and take the relic you were saving for. The building is the authored
+render, one profile serving all four approaches because the house was built
+four-fold symmetric on purpose; its lanterns are live and always lit, and a
+completed trade floods the interior and wakes the artifact under the dome. A
+save carries the ledger, and a save from before the Exchange existed opens
+into a valley that has one anyway, because it was always part of the world.
+
 **The frame is graded.** Split-toned, not tinted: a soft-light gradient warms
 what is already bright toward the sun corner and deepens what is already dark
 toward the cool one, which adds shape where a flat wash adds milk. The grade
@@ -489,6 +508,7 @@ npm test
 | `audio.test.js` | The ambience: that the beds exist and are audible, that water follows what is on screen, that a blade cuts through the bed in the right frequency band, and that mute means mute |
 | `houses.test.js` | The four crowns' faces: that each roofs its whole settlement in one material and no two share it, that the roof in the picture is the roof on the table, that a knight of another house is built differently rather than tinted differently, that a roof carries snow in winter and not in summer, that only the two winter boundaries rebake a settlement, and that none of it is in the save |
 | `iso.test.js` | The isometric slice: the projection round-trips exactly, the toggle holds the view centre and is remembered, clicking a figure at its drawn position selects it, an order lands on the pointed ground and the unit arrives, the ghost matches the aimed tile, the drawn box selects what it covers, a figure south of a house draws in front of it, and off means off; and the house contract: twenty-eight state sprites on one canvas and one anchor, construction walking its five stages and holding through a pause, damage walking its thresholds and repair walking them back, one main sprite per architecture set with the crown as a tint layer, an age advance that re-dresses without touching the entity, footprint-true selection that ignores the roof, a villager walking under the roofline, and thirty houses standing together |
+| `exchange.test.js` | The Concord Exchange: that one stands in every valley belonging to nobody, that nothing can hurt it and soldiers do not pick fights with it, that a trade needs somebody at the steps and delivers what it says, that the stock is shared, runs out and restocks, that mercenaries fight for whoever paid, that rival crowns buy from the same shelves, and that the ledger survives a save while an old save gains the house |
 | `pace.test.js` | The clock: that a season is longer than a crop, that a soldier is quicker to raise than a villager and a knight slower than a spearman, that war bands start far apart and close up as the war goes on, that nothing walks out of a stockade before the settlement has had its head start, and that a standing order stops without jamming its queue |
 
 Individual suites: `npm run test:water`, and so on.
@@ -514,7 +534,7 @@ node test/perf.js                  AFTER
 ```
 ironvale.html          the entire game — markup, styles, script
 test/harness.js        shared Playwright setup, and the debug hook
-test/*.test.js         the seventeen suites
+test/*.test.js         the eighteen suites
 test/perf.js           render-cost benchmark
 scripts/serve.js       local server for playing
 scripts/check-syntax.js  parses the script block
