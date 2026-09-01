@@ -669,6 +669,7 @@
       <b>Q W E R T Y &hellip;</b><span>Order cards, left to right</span>
       <b>Ctrl + right click</b><span>Attack-move: advance and engage</span>
       <b>Ctrl + A</b><span>Every soldier but the king</span>
+      <b>Shift + S</b><span>Cycle soldier stance</span>
       <b>Double click</b><span>All of that unit on screen</span>
       <b>Right click minimap</b><span>Send them across the valley</span>
       <b>Ctrl + 1&ndash;9</b><span>Make a control group</span>
@@ -676,7 +677,7 @@
       <b>H</b><span>Your Town Center</span>
       <b>K</b><span>Your king</span>
       <b>. (period)</b><span>Next idle villager</span>
-      <b>Space</b><span>Pause</span>
+      <b>Space / P</b><span>Pause</span>
       <b>Tab</b><span>The ledger: charts of the war</span>
       <b>C / M</b><span>Chronicle / mute</span>
       <b>Esc</b><span>Menu, or cancel placement</span>
@@ -1308,6 +1309,7 @@ let ents, nextId, cam, sides, sel, placing, gameTime, running, paused, terrain, 
     stats, objDone, chronOpen=true, speed=1, difficulty='normal',
     groups, shots, pings, lastAlert, autosaveAt, ended;
 let hist=[], histAt=0;
+let damageFloats=[];
 let occ=new Uint8Array(MAP_W*MAP_H);
 // A big map means thousands of resource entities. Every per-frame loop that only
 // cares about units or buildings reads these caches instead of all of ents.
@@ -1748,12 +1750,29 @@ function uHp(type,o){
   const d=UNIT[type], up=upOf(o,type);
   return d.hp + (d.cls==='vil'?sides[o].mod.vilHp:0) + (up?up.hp:0);
 }
+const STANCE_ORDER=['balanced','aggressive','defensive'];
+const STANCE_INFO={
+  balanced:{name:'Balanced', hint:'No combat modifier.'},
+  aggressive:{name:'Aggressive', hint:'+12% attack, but no defensive bonus.'},
+  defensive:{name:'Defensive', hint:'+1 armour and tighter auto-engagement.'}
+};
+function stanceOf(u){ return STANCE_INFO[u&&u.stance] ? u.stance : 'balanced'; }
+function coverAt(x,y){
+  // Trees are real map entities, so harvested woods naturally stop protecting
+  // a position. A nearby trunk is enough to give infantry a little cover.
+  for(const e of ents){
+    if(e.dead||e.kind!=='res'||e.type!=='tree'||e.amount<=0) continue;
+    if(Math.hypot(e.x-x,e.y-y)<=TILE*1.65) return true;
+  }
+  return false;
+}
 function uAtk(u){
   const d=UNIT[u.type], m=sides[u.owner].mod, up=upOf(u.owner,u.type);
   let a=d.atk+(up?up.atk:0);
   if(d.cls==='inf'||d.cls==='cav') a+=m.melee;
   else if(d.cls==='arch') a+=m.ranged;
   if(d.cls!=='king'&&kingNear(u)) a+=3;        // fighting under the king's eye
+  if(stanceOf(u)==='aggressive') a*=1.12;
   return a;
 }
 function uRange(u){
@@ -1773,6 +1792,8 @@ function armorOf(e){
   const d=UNIT[e.type], m=sides[e.owner].mod;
   let a=(d.armor||0) + (d.cls==='vil'?m.vilArmor:m.armor);
   if(d.cls!=='king'&&kingNear(e)) a+=1;
+  if(stanceOf(e)==='defensive') a+=1;
+  if(d.cls!=='ship'&&coverAt(e.x,e.y)) a+=1;
   return a;
 }
 function classOf(e){ return e.kind==='bld' ? 'bld' : UNIT[e.type].cls; }
@@ -2055,7 +2076,7 @@ function makeUnit(o,type,x,y){
   const d=UNIT[type], hp=uHp(type,o);
   const e={id:nextId++, kind:'unit', type, owner:o, x, y, maxHp:hp, hp,
     r:d.r, task:'idle', tx:null, ty:null, target:null, resT:null, carry:0, carryType:null,
-    prevRes:null, cd:0, face:rnd()*6.28, bob:rnd()*6.28, vx:0, vy:0};
+    prevRes:null, cd:0, face:rnd()*6.28, bob:rnd()*6.28, vx:0, vy:0, stance:'balanced'};
   ents.push(e); touchLists(); return e;
 }
 
@@ -2068,7 +2089,7 @@ function newGame(diff){
           camps:0, raiders:0, tradesmen:0, flagBest:0, army:0};
   objDone=Object.create(null);
   groups=Object.create(null);
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; damageFloats=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; autosaveAt=45; speed=1; aiming=false; endReason=null;
   hist=[]; histAt=0;
   aiReset(); envoy=null;
   seed=(Date.now()>>>0)^0x9E3779B9;
@@ -2275,6 +2296,30 @@ function nearestEnemy(u,radius,inclBld){
 /* ---------------------------- orders ---------------------------- */
 function orderMove(u,x,y){ u.task='move'; u.tx=x; u.ty=y; u.target=null; u.resT=null;
   u.bestRem=undefined; u.stall=0; u.grind=0; u.moveT=0; u.sx0=undefined; u.slideDir=0; u.stuckT=0; }
+function orderFormation(us,x,y,amove){
+  if(!us.length) return;
+  let cx=0,cy=0;
+  for(const u of us){ cx+=u.x; cy+=u.y; }
+  cx/=us.length; cy/=us.length;
+  const angle=Math.atan2(y-cy,x-cx), fx=Math.cos(angle), fy=Math.sin(angle);
+  const px=-fy, py=fx, cols=Math.ceil(Math.sqrt(us.length)), rows=Math.ceil(us.length/cols);
+  us.forEach((u,i)=>{
+    const col=i%cols, row=(i/cols)|0;
+    const side=(col-(cols-1)/2)*24, front=(row-(rows-1)/2)*24;
+    const sx=x+px*side+fx*front, sy=y+py*side+fy*front;
+    if(amove) orderAMove(u,sx,sy); else orderMove(u,sx,sy);
+    u.face=angle;
+  });
+}
+function cycleStance(us){
+  const soldiers=us.filter(u=>u.kind==='unit'&&u.owner===PLAYER&&UNIT[u.type]&&
+    UNIT[u.type].cls!=='vil'&&u.type!=='bearer');
+  if(!soldiers.length){ log('Select soldiers to change their stance.',true); sfx('error'); return; }
+  const current=stanceOf(soldiers[0]), next=STANCE_ORDER[(STANCE_ORDER.indexOf(current)+1)%STANCE_ORDER.length];
+  for(const u of soldiers) u.stance=next;
+  log(soldiers.length+' soldiers: '+STANCE_INFO[next].name+'.');
+  sfx('select'); updatePanel();
+}
 function isShip(u){ return !!UNIT[u.type].water; }   // boolean: it is compared with ===
 function canGather(u,r){
   if(isShip(u)) return UNIT[u.type].gather && r.kind==='res' && r.type==='fish';
@@ -2860,6 +2905,11 @@ function hit(src,t){
   // Only sound blows the player can see, or a battle off-screen is as loud as
   // one in front of them.
   const seen=onScreen(t.x,t.y,110);
+  if(seen && (t.kind==='unit'||dmg>=10)){
+    if(damageFloats.length>90) damageFloats.splice(0,damageFloats.length-90);
+    damageFloats.push({x:t.x+(rnd()-.5)*8,y:t.y-18,amount:Math.round(dmg),
+                       t:0.85,life:0.85,enemy:t.owner===PLAYER});
+  }
   if(t.kind==='bld'){
     const heavy=UNIT[src.type]&&UNIT[src.type].cls==='siege';
     if(seen){
@@ -3053,7 +3103,7 @@ function updateUnit(u,dt){
       }
       if(rem<=2){ u.task='idle'; halt(u); u.bestRem=undefined; u.stall=0; u.grind=0; u.moveT=0; }
       else if(UNIT[u.type].cls!=='vil' && UNIT[u.type].cls!=='siege'){
-        const e=nearestEnemy(u,120);
+        const e=nearestEnemy(u,stanceOf(u)==='defensive'?84:stanceOf(u)==='aggressive'?210:120);
         if(e) orderAttack(u,e);
       }
       break;
@@ -3169,7 +3219,7 @@ function updateUnit(u,dt){
       break;
     }
     case 'patrol': {
-      const e=nearestEnemy(u,170,false);
+      const e=nearestEnemy(u,stanceOf(u)==='defensive'?120:stanceOf(u)==='aggressive'?230:170,false);
       if(e){ u.target=e; u.am=null; u.wasPatrol=true; u.task='attack'; break; }
       if(moveToward(u,u.tx,u.ty,dt)<=12){
         u.leg=u.leg===1?0:1;
@@ -3179,7 +3229,7 @@ function updateUnit(u,dt){
       break;
     }
     case 'amove': {
-      const e=nearestEnemy(u,200,true);
+      const e=nearestEnemy(u,stanceOf(u)==='defensive'?130:stanceOf(u)==='aggressive'?260:200,true);
       if(e){ u.target=e; u.task='attack'; break; }
       // soldiers dig in on arrival; villagers just stop, the way a plain move ends
       if(moveToward(u,u.tx,u.ty,dt)<=3){ u.task=UNIT[u.type].cls==='vil'?'idle':'hold'; u.am=null; halt(u); }
@@ -3241,7 +3291,7 @@ function updateUnit(u,dt){
     }
     default: {
       if(UNIT[u.type].cls!=='vil' && UNIT[u.type].cls!=='siege'){
-        const e=nearestEnemy(u,150);
+        const e=nearestEnemy(u,stanceOf(u)==='defensive'?100:stanceOf(u)==='aggressive'?240:150);
         if(e) orderAttack(u,e);
       } else if(u.carry>0){
         const dp=nearestDrop(u,u.carryType);
@@ -5725,6 +5775,8 @@ function frameBody(now){
     pings=pings.filter(p=>p.t>0);
     for(const m of marks) m.t-=dt;
     marks=marks.filter(m=>m.t>0);
+    for(const f of damageFloats){ f.t-=dt; f.y-=dt*14; }
+    damageFloats=damageFloats.filter(f=>f.t>0);
     for(const q of puffs) q.t-=dt;
     if(puffs.length>240) puffs.splice(0,puffs.length-240);
     puffs=puffs.filter(q=>q.t>0);
@@ -7498,6 +7550,23 @@ function draw(){
     if(q.c) ctx.fillStyle='rgba('+q.c[0]+','+q.c[1]+','+q.c[2]+','+a+')';
     else    ctx.fillStyle='rgba(255,'+(150+((q.h||0)*60|0))+',90,'+a+')';
     { const S=scr(q.x,q.y); ctx.fillRect(S.x-1, S.y-1, 2.2, 2.2); }
+  }
+  // Damage is readable at a glance without making the player inspect health
+  // bars. The label rises out of the impact and fades before battles become a
+  // wall of numbers.
+  if(damageFloats.length){
+    ctx.save();
+    ctx.font='600 13px "Barlow Condensed",Arial,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const f of damageFloats){
+      const S=scr(f.x,f.y);
+      ctx.globalAlpha=Math.min(1,f.t/f.life)*0.92;
+      ctx.fillStyle=f.enemy?'#F0A08A':'#F1D58A';
+      ctx.strokeStyle='rgba(24,18,12,.76)'; ctx.lineWidth=3;
+      ctx.strokeText(String(f.amount),S.x,S.y-10);
+      ctx.fillText(String(f.amount),S.x,S.y-10);
+    }
+    ctx.restore();
   }
 
   // fog: unexplored is solid, explored-but-unseen is dimmed
@@ -12474,6 +12543,10 @@ function drawUnit(u){
     ctx.beginPath(); ctx.ellipse(x,gy,(S+4)*pulse,(S+4)*0.42*pulse,0,0,6.283); ctx.stroke();
     ctx.strokeStyle='#E8C15A'; ctx.lineWidth=1.6;
     ctx.beginPath(); ctx.ellipse(x,gy,(S+3)*pulse,(S+3)*0.42*pulse,0,0,6.283); ctx.stroke();
+    if(cls!=='vil'&&cls!=='ship'&&cls!=='siege'){
+      const sc=stanceOf(u)==='aggressive'?'#D86F4B':stanceOf(u)==='defensive'?'#6EA1B7':'#D9B65F';
+      ctx.fillStyle=sc; ctx.beginPath(); ctx.arc(x+S+3,gy-8,3.2,0,6.283); ctx.fill();
+    }
   }
 
   if(cls==='ship'){
@@ -12940,12 +13013,17 @@ function updatePanel(){
       const bon=Object.keys(d.bonus||{});
       st.innerHTML='<span><b>HP</b> '+Math.ceil(u.hp)+'/'+u.maxHp+'</span>'+
         '<span><b>Attack</b> '+uAtk(u)+'</span><span><b>Armour</b> '+armorOf(u)+'</span>'+
+        (UNIT[u.type].cls!=='vil'&&UNIT[u.type].cls!=='ship'&&UNIT[u.type].cls!=='siege'
+          ?'<span><b>Stance</b> '+STANCE_INFO[stanceOf(u)].name+'</span>':'')+
         (isVil(u)?'<span><b>Carrying</b> '+Math.floor(u.carry)+'/'+carryCap(PLAYER)+'</span>':'')+
         (bon.length?'<span><b>Bonus vs</b> '+bon.map(k=>CLS_LABEL[k]).join(', ')+'</span>':'')+
         '<span><b>Doing</b> '+({idle:'nothing',move:'walking',gather:'gathering',build:'building',attack:'fighting',amove:'advancing',hold:'holding ground',enter:'taking shelter',repair:'repairing',patrol:'patrolling'}[mine[0].task]||'waiting')+'</span>';
     } else {
       const hp=mine.reduce((n,e)=>n+e.hp,0), mx=mine.reduce((n,e)=>n+e.maxHp,0);
-      st.innerHTML='<span><b>Total HP</b> '+Math.ceil(hp)+'/'+Math.ceil(mx)+'</span>';
+      const ss=sold.filter(u=>STANCE_INFO[u.stance]);
+      const same=ss.length&&ss.every(u=>stanceOf(u)===stanceOf(ss[0]));
+      st.innerHTML='<span><b>Total HP</b> '+Math.ceil(hp)+'/'+Math.ceil(mx)+'</span>'+
+        (same?'<span><b>Stance</b> '+STANCE_INFO[stanceOf(ss[0])].name+'</span>':'');
     }
     if(bear.length) bearerCards(bear);
     if(sold.length) soldierCards(sold);
@@ -13495,6 +13573,7 @@ function serEnt(e){
     o.cy=e.carry; o.ct=e.carryType; o.pv=e.prevRes; o.cd=e.cd; o.fc=e.face;
     o.am=e.am?[e.am.x,e.am.y]:null;
     o.pt=e.pa?[e.pa.x,e.pa.y,e.pb.x,e.pb.y,e.leg]:null;
+    o.st=stanceOf(e);
   }
   return o;
 }
@@ -13564,7 +13643,7 @@ function restore(snap){
   stats=snap.stats;
   objDone=Object.create(null); for(const k of snap.obj) objDone[k]=true;
   desAI(snap); cam={x:snap.cam.x,y:snap.cam.y};
-  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
+  shots=[]; pings=[]; marks=[]; puffs=[]; sparks=[]; fallen=[]; spent=[]; damageFloats=[]; scarred=[]; wrecks=[]; metCrown=[]; lastAlert=-99; ended=false; paused=false; speed=1; aiming=false;
   hist=snap.hist||[]; histAt=gameTime+8;
   // A save from before the board existed has met nobody; the first vision pass
   // after it opens fills that in from what is actually on screen.
@@ -13620,7 +13699,7 @@ function restore(snap){
     const u={id:o.i, kind:'unit', type:o.t, owner:o.o, x:o.x, y:o.y, hp:o.hp, maxHp:o.mh, dead:false,
       tx:o.mx2[0], ty:o.mx2[1], task:o.tk, carry:o.cy, carryType:o.ct, prevRes:o.pv,
       cd:o.cd, face:Number.isFinite(o.fc)?o.fc:0, bob:0, vx:0, vy:0, r:d.r, target:null, resT:null,
-      am:o.am?{x:o.am[0],y:o.am[1]}:null};
+      am:o.am?{x:o.am[0],y:o.am[1]}:null, stance:STANCE_INFO[o.st]?o.st:'balanced'};
     byId[u.id]=u; return u;
   };
   for(const e of ents){
@@ -14484,7 +14563,7 @@ function commandAt(mx,my,force){
   if(aiming){
     aiming=false;
     if(myUnits.length){
-      for(const u of myUnits) orderAMove(u,w.x,w.y);
+      orderFormation(myUnits,w.x,w.y,true);
       mark(w.x,w.y,'amove'); sfx('order');
       log(myUnits.length+' advancing, engaging anything on the way.');
     }
@@ -14508,7 +14587,7 @@ function commandAt(mx,my,force){
     mark(t.x,t.y,'attack');
     log('Attacking '+(t.kind==='bld'?BLD[t.type].name:unitName(t.owner,t.type))+'.');
   } else if(force){
-    for(const u of myUnits) orderAMove(u,w.x,w.y);
+    orderFormation(myUnits,w.x,w.y,true);
     mark(w.x,w.y,'amove');
     log(myUnits.length+' advancing, engaging anything on the way.');
   } else if(t&&t.kind==='res'){
@@ -14527,11 +14606,7 @@ function commandAt(mx,my,force){
   } else if(t&&t.owner===PLAYER&&t.type==='plot'&&!t.building){
     for(const u of myUnits) isVil(u)?orderGather(u,t):orderMove(u,t.x,t.y+40);
   } else {
-    const n=myUnits.length, per=Math.ceil(Math.sqrt(n));
-    myUnits.forEach((u,i)=>{
-      const ox=((i%per)-(per-1)/2)*24, oy=(Math.floor(i/per)-(Math.ceil(n/per)-1)/2)*24;
-      orderMove(u,w.x+ox,w.y+oy);
-    });
+    orderFormation(myUnits,w.x,w.y,false);
     mark(w.x,w.y,'move');
   }
 }
@@ -14545,11 +14620,8 @@ mm.addEventListener('contextmenu',e=>{
   if(!myUnits.length) return;
   const amove=aiming||e.ctrlKey||e.metaKey;
   aiming=false;
-  const n=myUnits.length, per=Math.ceil(Math.sqrt(n));
-  myUnits.forEach((u,i)=>{
-    const ox=((i%per)-(per-1)/2)*26, oy=(Math.floor(i/per)-(Math.ceil(n/per)-1)/2)*26;
-    if(amove) orderAMove(u,wx+ox,wy+oy); else orderMove(u,wx+ox,wy+oy);
-  });
+  const n=myUnits.length;
+  orderFormation(myUnits,wx,wy,amove);
   mark(wx,wy,amove?'amove':'move'); sfx('order');
   log(amove?n+' advancing across the valley.':n+' marching across the valley.');
   updatePanel();
@@ -14589,7 +14661,7 @@ addEventListener('keydown',e=>{
     return;
   }
   // these stay live while paused or finished — otherwise P would be a one-way door
-  if((k===' '||k==='pause')&&!ended){ paused=!paused; log(paused?'Paused.':'Resumed.'); return; }
+  if((k===' '||k==='pause'||k==='p')&&!ended){ paused=!paused; log(paused?'Paused.':'Resumed.'); return; }
   if(k==='c'&&!e.ctrlKey){ toggleChron(); return; }
   if(k==='j'&&!e.ctrlKey){ if(document.getElementById('courts').style.display==='grid') closeAll(); else openCourts(); return; }
   if(k==='m'){ toggleSound(); return; }
@@ -14604,6 +14676,11 @@ addEventListener('keydown',e=>{
   if(k==='+'||k==='='||k==='-'||k==='_'){ cycleSpeed(); return; }
 
   if(ended||paused) return;
+
+  if(e.shiftKey&&k==='s'&&!e.ctrlKey&&!e.metaKey){
+    cycleStance(sel);
+    e.preventDefault(); return;
+  }
 
   if(e.ctrlKey||e.metaKey){
     if(k==='a'){
@@ -14648,6 +14725,12 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 addEventListener('blur',()=>{ for(const kk in keys) keys[kk]=false; });
+addEventListener('visibilitychange',()=>{
+  if(document.hidden&&running&&!paused&&!ended){
+    paused=true;
+    log('Paused while you were away.');
+  }
+});
 
 /* ------------------------------ end game ------------------------------ */
 let endReason=null;
