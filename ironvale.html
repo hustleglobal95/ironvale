@@ -5403,7 +5403,14 @@ function v3Collect(at){
       }
       const bh=e.building?12:(e.type==='castle'?64:e.type==='tower'?70:40);
       if(SEL.has(e.id)) v3Push('disc', cx,g2+1.2,cz, W2*1.5,1,H2*1.5, 246,214,96, 0);
+      const site=siteOf(e.type);
+      if(site.kind!=='none'){
+        const earth=HEX((SITE_EARTH[site.kind]||SITE_EARTH.yard)[0]);
+        v3Push('disc', cx,g2+0.18,cz, W2*1.28,1.02,H2*1.28, earth[0],earth[1],earth[2], 0);
+      }
       v3Push('disc', cx+7,g2+0.6,cz+5, W2*1.15,1,H2*1.15, 66,70,52, 0);
+      const base=HEX(d.wall||'#B9A87F');
+      v3Push('box', cx,g2,cz, W2*0.90,4,H2*0.90, base[0],base[1],base[2], 0);
       v3Push('box', cx,g2,cz, W2*0.84,bh,H2*0.84, wall[0],wall[1],wall[2], 0);
       if(!e.building)
         v3Push('pyr', cx,g2+bh,cz, W2*1.28, e.type==='tower'?24:28, H2*1.28, roof[0],roof[1],roof[2], 0.785);
@@ -6378,6 +6385,44 @@ function overhangAO(g,x,y,w,depth,strength){
   gr.addColorStop(1, 'rgba('+LIGHT.deep+',0)');
   g.fillStyle=gr;
   g.fillRect(x, y, w, depth);
+}
+// A building should meet the ground through a threshold, not through a clean
+// transparent edge. This is drawn after the structure so the nearest grass,
+// stones, and foundation shadow interrupt the bottom pixels of the sprite.
+function buildingContact2D(b,px,py,w,h){
+  if(b.type==='plot'||b.type==='farm'||b.type==='standard') return;
+  const S=siteOf(b.type), base=py+h-2;
+  let z=(b.id*2654435761)>>>0;
+  const next=()=>{ z=(z*1664525+1013904223)>>>0; return z/4294967296; };
+  ctx.save();
+  ctx.fillStyle=deepAO(S.kind==='paved'?.24:.34);
+  ctx.beginPath();
+  ctx.ellipse(px+w*0.50,base+1,w*.40,Math.max(2.2,h*.045),0,0,6.283);
+  ctx.fill();
+  ctx.strokeStyle=S.kind==='paved'?'rgba(116,108,85,.66)':'rgba(54,43,27,.64)';
+  ctx.lineWidth=Math.max(1.4,Math.min(3,w*.022));
+  ctx.beginPath();
+  ctx.moveTo(px+w*.09,base);
+  ctx.quadraticCurveTo(px+w*.31,base-1.4,px+w*.52,base+0.6);
+  ctx.quadraticCurveTo(px+w*.73,base-1.1,px+w*.91,base+0.4);
+  ctx.stroke();
+  if(S.kind==='paved'){
+    ctx.fillStyle='rgba(126,119,98,.74)';
+    for(let i=0;i<4;i++){
+      const x=px+w*(.16+next()*.68), y=base+2+next()*3;
+      ctx.beginPath(); ctx.ellipse(x,y,1.6+next()*1.5,.8+next()*.7,next()*3.14,0,6.283); ctx.fill();
+    }
+  } else {
+    const n=w>90?6:4;
+    for(let i=0;i<n;i++){
+      const x=px+w*(.08+next()*.84), y=base+2+next()*2.5;
+      const lean=(next()-.5)*2.2, ht=3.5+next()*4.5;
+      ctx.strokeStyle=i&1?'rgba(112,139,67,.86)':'rgba(73,103,49,.84)';
+      ctx.lineWidth=Math.max(1,Math.min(1.8,w*.012));
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.quadraticCurveTo(x+lean*.45,y-ht*.6,x+lean,y-ht); ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 // How hard it is blowing, 0 to 1. Written by the ambience when there is sound
@@ -10225,6 +10270,45 @@ function drawIsoWall(b){
   if(b.hp<b.maxHp-0.5||b.building) barHp(b, C.x-14, C.y-sp.oy-6, 28);
   return true;
 }
+function isoBuildingContact(b,S0){
+  if(b.type==='plot'||b.type==='farm'||b.type==='standard') return;
+  const G=isoGeo(b.type), C=isoCorners(G);
+  const p=q=>[S0.x+q[0],S0.y+q[1]];
+  const Wc=p(C.Wc), S=p(C.S), E=p(C.E);
+  ctx.save();
+  ctx.strokeStyle=deepAO(.42);
+  ctx.lineWidth=Math.max(1.8,Math.min(3.4,G.bw*.026));
+  ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(Wc[0],Wc[1]); ctx.lineTo(S[0],S[1]); ctx.lineTo(E[0],E[1]); ctx.stroke();
+  ctx.strokeStyle='rgba(193,177,126,.30)';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(Wc[0]+1,Wc[1]-1); ctx.lineTo(S[0],S[1]-1); ctx.lineTo(E[0]-1,E[1]-1);
+  ctx.stroke();
+  const SDef=siteOf(b.type);
+  let z=(b.id*1103515245+12345)>>>0;
+  const next=()=>{ z=(z*1664525+1013904223)>>>0; return z/4294967296; };
+  if(SDef.kind==='paved'){
+    ctx.fillStyle='rgba(126,119,98,.72)';
+    for(let i=0;i<4;i++){
+      const t=.12+next()*.76;
+      const side=next()<.5, a=side?Wc:S, d=side?S:E;
+      const x=a[0]+(d[0]-a[0])*t, y=a[1]+(d[1]-a[1])*t+1.5+next()*2;
+      ctx.beginPath(); ctx.ellipse(x,y,1.4+next()*1.4,.75+next()*.6,next()*3.14,0,6.283); ctx.fill();
+    }
+  } else {
+    ctx.lineWidth=1.2;
+    for(let i=0;i<5;i++){
+      const t=.10+next()*.80;
+      const side=next()<.5, a=side?Wc:S, d=side?S:E;
+      const x=a[0]+(d[0]-a[0])*t, y=a[1]+(d[1]-a[1])*t+2;
+      const ht=3+next()*4, lean=(next()-.5)*2.5;
+      ctx.strokeStyle=i&1?'rgba(112,139,67,.82)':'rgba(73,103,49,.82)';
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.quadraticCurveTo(x+lean*.4,y-ht*.55,x+lean,y-ht); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 // A gate lies along its run: mirrored when the wall it closes runs the other way
 function gateAxis(b){
   const M=isoWallMap();
@@ -11302,6 +11386,7 @@ function drawIsoBld(b){
     ctx.fillStyle='#EBDFC4'; ctx.font='500 11px "Barlow Condensed", sans-serif'; ctx.textAlign='center';
     ctx.fillText(Math.round(b.prog/b.buildTime*100)+'%', S0.x, S0.y+2);
     ctx.textAlign='left';
+    isoBuildingContact(b,S0);
     barHp(b, S0.x-28, S0.y-sp.oy+6, 56);
     return true;
   }
@@ -11381,6 +11466,7 @@ function drawIsoBld(b){
     }
     ctx.globalCompositeOperation='source-over';
   }
+  isoBuildingContact(b,S0);
   return true;
 }
 
@@ -11459,6 +11545,7 @@ function drawBld(b){
       ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2;
       ctx.strokeRect(px-2,py-2,w+4,h+4);
     }
+    buildingContact2D(b,px,py,w,h);
     ctx.restore(); return;
   }
 
@@ -11479,6 +11566,7 @@ function drawBld(b){
     ctx.fillStyle='#EBDFC4'; ctx.font='500 11px "Barlow Condensed", sans-serif'; ctx.textAlign='center';
     ctx.fillText(Math.round(p*100)+'%', px+w/2, py+h/2+4);
     ctx.textAlign='left';
+    buildingContact2D(b,px,py,w,h);
     barHp(b,px,py,w); ctx.restore(); return;
   }
 
@@ -11678,6 +11766,7 @@ function drawBld(b){
     }
   }
   if(flip) ctx.restore();
+  buildingContact2D(b,px,py,w,h);
   if(b.flash>0){ ctx.fillStyle='rgba(255,90,60,'+Math.min(.6,b.flash*2.2)+')'; ctx.fillRect(px,py,w,h); }
   if(sel.includes(b)){ ctx.strokeStyle='#D3A23C'; ctx.lineWidth=2; ctx.strokeRect(px-3,py-3,w+6,h+6); }
   barHp(b,px,py,w);
