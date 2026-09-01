@@ -394,13 +394,17 @@ const { chromium, wrap, boot } = require('./harness');
     if (!g.propsOn()) return { ready: false };
     // The ground dresses itself differently by season - snow lies over the
     // props in winter - and a chunk still comes back identical when re-baked.
-    g.setSeason(1); const a = g.chunkPx(6, 6);
-    g.setSeason(3); const w = g.chunkPx(6, 6);
-    g.setSeason(1); const b2 = g.chunkPx(6, 6);
+    // Several chunks: the map is generated fresh every run, so any one chunk
+    // can come up all water and carry nothing at all.
     let dw = 0, db = 0;
-    for (let i = 0; i < a.length; i += 16) {
-      if (Math.abs(a[i] - w[i]) > 24) dw++;
-      if (Math.abs(a[i] - b2[i]) > 6) db++;
+    for (const [cx, cy] of [[3, 3], [5, 5], [6, 6], [8, 8], [2, 7]]) {
+      g.setSeason(1); const a = g.chunkPx(cx, cy);
+      g.setSeason(3); const w = g.chunkPx(cx, cy);
+      g.setSeason(1); const b2 = g.chunkPx(cx, cy);
+      for (let i = 0; i < a.length; i += 16) {
+        if (Math.abs(a[i] - w[i]) > 24) dw++;
+        if (Math.abs(a[i] - b2[i]) > 6) db++;
+      }
     }
     return { ready: true, winter: dw, stable: db };
   });
