@@ -358,6 +358,57 @@ const { chromium, wrap, boot } = require('./harness');
   ok('and a painted conifer holds its green (' + paintedWood.hold + ' px), until the snow (' +
      paintedWood.snow + ' px)', paintedWood.hold === 0 && paintedWood.snow > 80);
 
+  // ---- the painted floor: five families, seasoned, and world-aligned -------
+  const floors = await page.evaluate(async () => {
+    const g = window.__IV;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 12000) { if (g.floors()) break; await new Promise(r => setTimeout(r, 200)); }
+    if (!g.floorsOn()) return { ready: false };
+    // A chunk baked in each season is a different picture, and the same chunk
+    // baked twice in one season is the same picture - the cache is honest.
+    const diff = (X, Y) => { let n = 0;
+      for (let i = 0; i < Math.min(X.length, Y.length); i += 16)
+        if (Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) > 24) n++;
+      return n; };
+    // Several chunks, because one chunk can be all bare earth - which has no
+    // autumn dressing of its own, and rightly doesn't.
+    let turn = 0, snow = 0, stable = 0;
+    for (const [cx, cy] of [[3, 3], [5, 5], [8, 8], [2, 7]]) {
+      g.setSeason(1); const a = g.chunkPx(cx, cy);
+      g.setSeason(2); turn += diff(a, g.chunkPx(cx, cy));
+      g.setSeason(3); snow += diff(a, g.chunkPx(cx, cy));
+      g.setSeason(1); stable += diff(a, g.chunkPx(cx, cy));
+    }
+    return { ready: true, turn, snow, stable };
+  });
+  ok('the painted floor decodes and the valley re-floors itself', floors.ready);
+  ok('the ground turns with the year and comes back the same (' + floors.turn + '/' +
+     floors.snow + ' px changed, ' + floors.stable + ' on return)',
+     floors.ready && floors.turn > 400 && floors.snow > 8000 && floors.stable === 0);
+
+  // ---- and what lies about on it ------------------------------------------
+  const props = await page.evaluate(async () => {
+    const g = window.__IV;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 15000) { if (g.props()) break; await new Promise(r => setTimeout(r, 200)); }
+    if (!g.propsOn()) return { ready: false };
+    // The ground dresses itself differently by season - snow lies over the
+    // props in winter - and a chunk still comes back identical when re-baked.
+    g.setSeason(1); const a = g.chunkPx(6, 6);
+    g.setSeason(3); const w = g.chunkPx(6, 6);
+    g.setSeason(1); const b2 = g.chunkPx(6, 6);
+    let dw = 0, db = 0;
+    for (let i = 0; i < a.length; i += 16) {
+      if (Math.abs(a[i] - w[i]) > 24) dw++;
+      if (Math.abs(a[i] - b2[i]) > 6) db++;
+    }
+    return { ready: true, winter: dw, stable: db };
+  });
+  ok('the ground carries stones, ferns, thickets and reeds, and the props decode', props.ready);
+  ok('snow lies over them in winter and the chunk bakes back identical (' +
+     props.winter + ' px / ' + props.stable + ' drift)',
+     props.ready && props.winter > 1000 && props.stable === 0);
+
   console.log('ERRORS:', errs.length ? errs.slice(0, 3).join('\n') : 'none');
   await b.close();
 })();
