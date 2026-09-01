@@ -319,6 +319,28 @@ downscale — the dye finds the granary hangings and the gate cloth and
 touches nothing else, which is the old palette-swap mechanic applied to a
 painting.
 
+**The ground is painted.** Five seamless floors - meadow grass, dry grass,
+bare earth, forest litter and shoreline sand - are laid into the ground bake,
+each through its own soft mask on exactly the melt line the terrain colours
+already used, and world-aligned so the texture carries across a chunk seam
+untouched. The grass families carry the four seasons (baked offline from the
+summer texture the same way the trees are, with winter's snow settling into
+the light of the weave first, the way snow does); the forest floor arrives
+through the canopy's own mask, so leaf litter appears under a wood and
+nowhere else; the beach takes its sand through the same falling-off mask that
+already softened the shoreline. Nothing is drawn from a painting until every
+dressing has decoded, and the moment they have, the chunk cache is dropped
+once and the whole valley re-floors itself.
+
+And things lie about on it. Stones, stumps and fallen wood, thickets, ferns,
+flowers, reeds, standing stones and drifts of snow - all baked into the
+ground chunk by the tile's own hash, so a stretch of country comes back
+identical when its chunk is evicted and none of it costs a frame anything.
+What a tile carries is decided by what the tile is: reeds at the waterline,
+ferns and thickets and the stumps of felled timber under the wood's shade,
+stones on the dry and broken ground, flowers in the meadow - and in winter,
+snow lying over whatever the tile already had.
+
 The wood is painted: six species from single summer renders - oak, beech,
 elm and birch among the broadleaves, spruce and pine for the conifers -
 spread over the forest by each tree's own hash, at eight sizes, so no two
