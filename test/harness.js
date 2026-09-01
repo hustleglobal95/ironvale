@@ -115,6 +115,9 @@ window.__IV={
   treeA:(v)=>treeArtSprite(v|0),
   floors:()=>floorsReady(), floorsOn:()=>FLOORS_ON,
   props:()=>propsReady(), propsOn:()=>PROPS_ON,
+  propScan:()=>{ const o={}; for(const k in PROP_N){ const bad=[];
+    for(let i=0;i<PROP_N[k];i++){ const a=artOf(k,i); if(!a||!a.ok) bad.push(i); }
+    if(bad.length) o[k]=bad; } return o; },
   chunkPx:(cx,cy)=>{ const c=groundChunk(cx|0,cy|0);
     const o=document.createElement('canvas'); o.width=c.width; o.height=c.height;
     const g2=o.getContext('2d'); g2.drawImage(c,0,0);
