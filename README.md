@@ -332,6 +332,17 @@ already softened the shoreline. Nothing is drawn from a painting until every
 dressing has decoded, and the moment they have, the chunk cache is dropped
 once and the whole valley re-floors itself.
 
+A building stands in the ground rather than on it. Under each one is a patch
+of earth worn bare by everyone who has walked in and out, shaped to the
+footprint's own diamond with a broken edge where the turf gave up; over the
+foot of each one is a skirt of grass and small stones that crosses the line
+where the wall meets the ground. That line is the whole problem: a large
+sprite with a clean alpha edge along its bottom reads as pasted onto the
+world, and a few tufts growing across it read as the world closing around it.
+Both are baked - the worn site per building type, the skirt per type and one
+of eight seeds - so a town of thirty costs thirty blits rather than a few
+hundred blades of grass a frame.
+
 And things lie about on it. Stones, stumps and fallen wood, thickets, ferns,
 flowers, reeds, standing stones and drifts of snow - all baked into the
 ground chunk by the tile's own hash, so a stretch of country comes back
