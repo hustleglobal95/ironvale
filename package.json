@@ -5,6 +5,7 @@
   "private": true,
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "build": "node scripts/build.js",
     "test": "node test/click.test.js && node test/economy.test.js && node test/combat.test.js && node test/features.test.js && node test/water.test.js && node test/factions.test.js && node test/audio.test.js && node test/effects.test.js && node test/view.test.js && node test/paths.test.js && node test/valley.test.js && node test/harvest.test.js && node test/crown.test.js && node test/courts.test.js && node test/pace.test.js && node test/houses.test.js && node test/iso.test.js && node test/exchange.test.js",
     "test:click": "node test/click.test.js",
     "test:economy": "node test/economy.test.js",
@@ -21,6 +22,7 @@
     "test:crown": "node test/crown.test.js",
     "perf": "node test/perf.js",
     "check": "node scripts/check-syntax.js",
+    "release:check": "npm run check && npm run build && npm test",
     "play": "node scripts/serve.js",
     "test:courts": "node test/courts.test.js",
     "test:pace": "node test/pace.test.js",
@@ -32,6 +34,6 @@
     "playwright": "^1.47.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

@@ -14,9 +14,10 @@ cd ironvale
 npm run play          # http://localhost:8080
 ```
 
-Or just open `ironvale.html` in a browser — it is a fragment rather than a full
-document (see [Why the file has no `<html>` tag](#why-the-file-has-no-html-tag)),
-so `npm run play` is the reliable way in.
+For a standalone file, run `npm run build` and open `dist/index.html`.
+The generated page contains the complete game; it needs no runtime server or
+JavaScript packages. The optional Google Fonts request needs network access,
+and local fallback fonts are used when it is unavailable.
 
 ## What's in it
 
@@ -621,6 +622,12 @@ ledger with charts.
 
 ## Running the tests
 
+The release gate is `npm run release:check`: syntax, standalone document
+generation, and all browser suites. A GitHub Actions workflow runs it on
+pushes and pull requests with Chromium installed. Do not call a release
+verified until that workflow passes. The default classic renderer is the
+playable release path; isometric view remains an optional work in progress.
+
 The suites are Playwright scripts that drive the real game in headless Chromium
 and assert on real state. They are not unit tests — they play the game.
 
@@ -809,17 +816,11 @@ parameter change under its null audio sink), and the four-farmhands assertion
 in `harvest.test.js`, which waits a fixed number of wall seconds for a fixed
 number of game seconds to pass. Run a suite on its own before believing it.
 
-### Why the file has no `<html>` tag
+### Why the source file has no `<html>` tag
 
-The game ships as a fragment because the host that publishes it supplies the
-document skeleton. `scripts/serve.js` and the test harness both wrap it before
-serving. If you want a standalone file, wrap it yourself:
-
-```html
-<!doctype html><html><head><meta charset="utf-8"></head><body>
-  <!-- ironvale.html here -->
-</body></html>
-```
+The game source is a fragment because its original host supplies the document
+skeleton. `scripts/serve.js` and `npm run build` wrap that same source.
+Publish `dist/index.html` as the standalone game.
 
 ### The debug hook
 
