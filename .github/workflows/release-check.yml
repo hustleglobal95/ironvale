@@ -1,0 +1,26 @@
+name: Release check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  game:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run release:check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ironvale-standalone
+          path: dist/index.html
+          if-no-files-found: ignore
